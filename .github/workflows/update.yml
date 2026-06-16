@@ -1,0 +1,39 @@
+name: Actualizar dashboard
+
+# Regenera index.html desde la API de Kobo cada 30 min y publica vía GitHub Pages.
+on:
+  schedule:
+    - cron: '13,43 * * * *'   # cada 30 min (minutos 13 y 43 para no saturar :00)
+  workflow_dispatch:          # botón manual "Run workflow"
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: write             # para commitear el index.html regenerado
+
+concurrency:
+  group: dashboard
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generar dashboard
+        env:
+          KOBO_TOKEN: ${{ secrets.KOBO_TOKEN }}
+        run: python3 build_dashboard.py
+
+      - name: Commitear si cambió
+        run: |
+          git config user.name  "dashboard-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add index.html
+          if git diff --quiet --cached; then
+            echo "Sin cambios."
+          else
+            git commit -m "Actualizar dashboard ($(date -u +%FT%TZ))"
+            git push
+          fi

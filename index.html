@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="es"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Encuesta población venezolana en Perú — Tablero en vivo</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+  :root { --bg:#0f1419; --card:#1a2027; --ink:#e6edf3; --mut:#8b98a5; --ac:#4a86e8; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:system-ui,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--ink); }
+  header { padding:22px 28px; border-bottom:1px solid #232b34; }
+  h1 { margin:0; font-size:20px; }
+  .sub { color:var(--mut); font-size:13px; margin-top:4px; }
+  .wrap { padding:24px 28px; max-width:1200px; margin:0 auto; }
+  .kpis { display:flex; gap:16px; flex-wrap:wrap; margin-bottom:8px; }
+  .kpi { background:var(--card); border:1px solid #232b34; border-radius:12px; padding:18px 22px; min-width:160px; }
+  .kpi .n { font-size:34px; font-weight:700; }
+  .kpi .l { color:var(--mut); font-size:13px; margin-top:2px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(330px,1fr)); gap:18px; margin-top:18px; }
+  .card { background:var(--card); border:1px solid #232b34; border-radius:12px; padding:16px 18px; }
+  .card h3 { margin:0 0 12px; font-size:14px; font-weight:600; color:var(--ink); }
+  canvas { max-height:300px; }
+  footer { color:var(--mut); font-size:12px; padding:18px 28px; border-top:1px solid #232b34; }
+</style></head>
+<body>
+<header>
+  <h1>Encuesta para población venezolana en Perú</h1>
+  <div class="sub">Tablero de seguimiento — datos agregados (sin información personal) · Actualizado: 2026-06-16 15:27 UTC</div>
+</header>
+<div class="wrap">
+  <div class="kpis">
+    <div class="kpi"><div class="n">9</div><div class="l">Respuestas totales</div></div>
+    <div class="kpi"><div class="n" id="kpi7">—</div><div class="l">Últimos 7 días</div></div>
+    <div class="kpi"><div class="n" id="kpiday">—</div><div class="l">Día más activo</div></div>
+  </div>
+  <div class="grid">
+    <div class="card"><h3>Respuestas por día</h3><canvas id="c_day"></canvas></div>
+    <div class="card"><h3>Género</h3><canvas id="c_gender"></canvas></div>
+    <div class="card"><h3>Departamento</h3><canvas id="c_depto"></canvas></div>
+    <div class="card"><h3>Distrito (top 10)</h3><canvas id="c_distr"></canvas></div>
+    <div class="card"><h3>Documento actual en Perú</h3><canvas id="c_doc"></canvas></div>
+    <div class="card"><h3>Nivel educativo</h3><canvas id="c_edu"></canvas></div>
+    <div class="card"><h3>Tipo de ingreso al Perú</h3><canvas id="c_entry"></canvas></div>
+    <div class="card"><h3>¿Tiene cuenta de ahorros?</h3><canvas id="c_bank"></canvas></div>
+    <div class="card"><h3>¿Está empleado/a?</h3><canvas id="c_emp"></canvas></div>
+    <div class="card"><h3>GAD-7: promedio por ítem (0–3)</h3><canvas id="c_gad"></canvas></div>
+    <div class="card"><h3>GAD-7: severidad (puntaje 0–21)</h3><canvas id="c_gadsev"></canvas></div>
+    <div class="card"><h3>PHQ-2: promedio por ítem (0–3)</h3><canvas id="c_phq"></canvas></div>
+  </div>
+</div>
+<footer>Fuente: KoboToolbox · Generado automáticamente · Solo agregados — ninguna respuesta individual es identificable.</footer>
+<script>
+const D = {"day": [["2026-06-14", "2026-06-15", "2026-06-16"], [2, 2, 5]], "gender": [["Mujer", "Hombre", "Otro"], [5, 2, 2]], "depto": [["LIMA", "CALLAO", "PIURA"], [6, 2, 1]], "distr": [["VILLA EL SALVADOR", "CALLAO", "SAN MARTIN DE PORRES", "MANCORA", "COMAS", "SAN JUAN DE LURIGANCHO"], [2, 2, 2, 1, 1, 1]], "doc": [["Carné de Extranjería (CE) vigente", "Documento vencido (CE, CPP o PTP vencido)"], [8, 1]], "edu": [["Superior/técnica completa", "Secundaria completa", "Secundaria incompleta"], [7, 1, 1]], "entry": [["Regular (con documentos vigentes)", "Irregular (sin documentos)"], [8, 1]], "bank": [["Sí", "No"], [7, 2]], "emp": [["No", "Sí"], [6, 3]], "gad": [["Nervioso", "Sin control", "Preocupación", "Relajarse", "Inquieto", "Irritable", "Miedo"], [1.78, 1.56, 1.89, 1.44, 1.56, 1.78, 1.11]], "gadsev": [["Mínima (0-4)", "Leve (5-9)", "Moderada (10-14)", "Severa (15-21)"], [0, 6, 0, 3]], "phq": [["Poco interés", "Decaído"], [1.56, 1.33]]};
+const AC = '#4a86e8', GRID = '#232b34', INK = '#8b98a5';
+Chart.defaults.color = INK; Chart.defaults.borderColor = GRID;
+const PAL = ['#4a86e8','#43d692','#ffad47','#f6919b','#a479e2','#16a766','#f2c960','#e06666','#76a5af','#c27ba0'];
+function bar(id, labels, data, horizontal) {
+  if(!labels.length) return;
+  new Chart(document.getElementById(id), { type:'bar',
+    data:{ labels, datasets:[{ data, backgroundColor:AC }] },
+    options:{ indexAxis: horizontal?'y':'x', plugins:{legend:{display:false}},
+      scales:{ x:{grid:{color:GRID}}, y:{grid:{color:GRID}} } } });
+}
+function donut(id, labels, data) {
+  if(!labels.length) return;
+  new Chart(document.getElementById(id), { type:'doughnut',
+    data:{ labels, datasets:[{ data, backgroundColor:PAL }] },
+    options:{ plugins:{legend:{position:'bottom'}} } });
+}
+function line(id, labels, data) {
+  new Chart(document.getElementById(id), { type:'line',
+    data:{ labels, datasets:[{ data, borderColor:AC, backgroundColor:'rgba(74,134,232,.2)', fill:true, tension:.3 }] },
+    options:{ plugins:{legend:{display:false}}, scales:{ x:{grid:{color:GRID}}, y:{grid:{color:GRID}} } } });
+}
+line('c_day', D.day[0], D.day[1]);
+donut('c_gender', D.gender[0], D.gender[1]);
+bar('c_depto', D.depto[0], D.depto[1], true);
+bar('c_distr', D.distr[0], D.distr[1], true);
+bar('c_doc', D.doc[0], D.doc[1], true);
+bar('c_edu', D.edu[0], D.edu[1], true);
+donut('c_entry', D.entry[0], D.entry[1]);
+donut('c_bank', D.bank[0], D.bank[1]);
+donut('c_emp', D.emp[0], D.emp[1]);
+bar('c_gad', D.gad[0], D.gad[1], false);
+bar('c_gadsev', D.gadsev[0], D.gadsev[1], false);
+bar('c_phq', D.phq[0], D.phq[1], false);
+// KPIs derivados
+const days = D.day[0], dc = D.day[1];
+if(days.length) {
+  const last7 = dc.slice(-7).reduce((a,b)=>a+b,0);
+  document.getElementById('kpi7').textContent = last7;
+  const mi = dc.indexOf(Math.max(...dc));
+  document.getElementById('kpiday').textContent = days[mi];
+}
+</script>
+</body></html>
