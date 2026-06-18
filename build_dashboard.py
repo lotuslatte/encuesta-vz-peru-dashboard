@@ -148,8 +148,114 @@ def gad7_score_dist(rows):
     return list(buckets.keys()), list(buckets.values())
 
 
+SEV_BANDS = ['Mínima (0-4)', 'Leve (5-9)', 'Moderada (10-14)', 'Severa (15-21)']
+
+
+def gad7_band(score):
+    if score <= 4:
+        return SEV_BANDS[0]
+    if score <= 9:
+        return SEV_BANDS[1]
+    if score <= 14:
+        return SEV_BANDS[2]
+    return SEV_BANDS[3]
+
+
+def dist(rows, field, order=None):
+    """Conteos en un orden fijo de códigos (escalas ordinales) o por frecuencia."""
+    if order is None:
+        return counts(rows, field)
+    c = Counter()
+    for r in rows:
+        v = r.get(field)
+        if v in (None, ''):
+            continue
+        c[str(v)] += 1
+    labels = [label(field, code) for code in order]
+    return labels, [c.get(str(code), 0) for code in order]
+
+
+def crosstab(rows, field_a, field_b, order_a=None, order_b=None, normalize=True):
+    """Tabla cruzada A×B para barras apiladas.
+
+    Devuelve {'cats': [etiquetas de A], 'series': [{'name': etiqueta B,
+    'data': [...]}, ...]}. Con normalize=True cada columna de A suma 100 (%)
+    para comparar grupos de distinto tamaño. Ambos campos quedan en `rows`,
+    así que nunca emite valores individuales: solo conteos agregados.
+    """
+    table = defaultdict(Counter)
+    for r in rows:
+        a, b = r.get(field_a), r.get(field_b)
+        if a in (None, '') or b in (None, ''):
+            continue
+        table[str(a)][str(b)] += 1
+    codes_a = order_a or sorted(table, key=lambda k: (-sum(table[k].values()), k))
+    codes_a = [c for c in codes_a if c in table]
+    b_seen = set()
+    for col in table.values():
+        b_seen |= set(col)
+    codes_b = [c for c in (order_b or sorted(b_seen)) if c in b_seen]
+    cats = [label(field_a, c) for c in codes_a]
+    series = []
+    for cb in codes_b:
+        data = []
+        for ca in codes_a:
+            n = table[ca].get(cb, 0)
+            tot = sum(table[ca].values())
+            data.append(round(100 * n / tot, 1) if (normalize and tot) else n)
+        series.append({'name': label(field_b, cb), 'data': data})
+    return {'cats': cats, 'series': series}
+
+
+def gad_sev_by_group(rows, group_field='main_current_doc_pe', order_a=None):
+    """Distribución de severidad GAD-7 (banda) cruzada por tipo de documento.
+
+    Estructura idéntica a crosstab() (apilada, normalizada a %)."""
+    table = defaultdict(Counter)
+    for r in rows:
+        g = r.get(group_field)
+        if g in (None, '') or not all(str(r.get(f, '')).isdigit() for f in GAD7):
+            continue
+        band = gad7_band(sum(int(r[f]) for f in GAD7))
+        table[str(g)][band] += 1
+    codes_a = order_a or sorted(table, key=lambda k: (-sum(table[k].values()), k))
+    codes_a = [c for c in codes_a if c in table]
+    cats = [label(group_field, c) for c in codes_a]
+    series = []
+    for band in SEV_BANDS:
+        data = []
+        for ca in codes_a:
+            n = table[ca].get(band, 0)
+            tot = sum(table[ca].values())
+            data.append(round(100 * n / tot, 1) if tot else 0)
+        series.append({'name': band, 'data': data})
+    return {'cats': cats, 'series': series}
+
+
+def pct_value(rows, field, code):
+    """% de filas con `field` == code (entre las respondidas). Solo agregado."""
+    code = str(code)
+    answered = [r for r in rows if r.get(field) not in (None, '')]
+    if not answered:
+        return 0
+    hit = sum(1 for r in answered if str(r.get(field)) == code)
+    return round(100 * hit / len(answered))
+
+
+def recontact_agg(subs):
+    """Conteo Sí/No de disposición a ser recontactado, leído de las submissions
+    crudas (el leaf `recontact` se mantiene fuera de `rows` por la regla de PII).
+    Es un valor sí/no, no un dato de contacto: solo se emiten los dos conteos."""
+    c = Counter()
+    for s in subs:
+        for k, v in s.items():
+            if leaf(k) == 'recontact' and v not in (None, ''):
+                c[str(v)] += 1
+    return ['Sí', 'No'], [c.get('1', 0), c.get('2', 0)]
+
+
 # --- HTML ------------------------------------------------------------------
-def build_html(agg, total, updated):
+def build_html(agg, total, updated, consent_pct, recontact_pct):
     data_json = json.dumps(agg, ensure_ascii=False)
     return f"""<!doctype html>
 <html lang="es"><head>
@@ -168,8 +274,12 @@ def build_html(agg, total, updated):
   .kpi {{ background:var(--card); border:1px solid #232b34; border-radius:12px; padding:18px 22px; min-width:160px; }}
   .kpi .n {{ font-size:34px; font-weight:700; }}
   .kpi .l {{ color:var(--mut); font-size:13px; margin-top:2px; }}
-  .grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(330px,1fr)); gap:18px; margin-top:18px; }}
+  .section {{ margin:30px 0 2px; padding-bottom:8px; border-bottom:1px solid #232b34; }}
+  .section h2 {{ margin:0; font-size:16px; font-weight:700; color:var(--ink); }}
+  .section .d {{ color:var(--mut); font-size:12px; margin-top:3px; }}
+  .grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(330px,1fr)); gap:18px; margin-top:14px; }}
   .card {{ background:var(--card); border:1px solid #232b34; border-radius:12px; padding:16px 18px; }}
+  .card.wide {{ grid-column:1 / -1; }}
   .card h3 {{ margin:0 0 12px; font-size:14px; font-weight:600; color:var(--ink); }}
   canvas {{ max-height:300px; }}
   footer {{ color:var(--mut); font-size:12px; padding:18px 28px; border-top:1px solid #232b34; }}
@@ -183,21 +293,57 @@ def build_html(agg, total, updated):
   <div class="kpis">
     <div class="kpi"><div class="n">{total}</div><div class="l">Respuestas totales</div></div>
     <div class="kpi"><div class="n" id="kpi7">—</div><div class="l">Últimos 7 días</div></div>
+    <div class="kpi"><div class="n" id="kpiavg">—</div><div class="l">Promedio diario (7d)</div></div>
     <div class="kpi"><div class="n" id="kpiday">—</div><div class="l">Día más activo</div></div>
+    <div class="kpi"><div class="n">{consent_pct}%</div><div class="l">Tasa de consentimiento</div></div>
+    <div class="kpi"><div class="n">{recontact_pct}%</div><div class="l">Acepta recontacto</div></div>
   </div>
+
+  <div class="section"><h2>Seguimiento de campo</h2>
+    <div class="d">Ritmo de respuestas y disposición de los participantes.</div></div>
   <div class="grid">
-    <div class="card"><h3>Respuestas por día</h3><canvas id="c_day"></canvas></div>
+    <div class="card wide"><h3>Respuestas por día y acumulado</h3><canvas id="c_day"></canvas></div>
     <div class="card"><h3>Género</h3><canvas id="c_gender"></canvas></div>
     <div class="card"><h3>Departamento</h3><canvas id="c_depto"></canvas></div>
     <div class="card"><h3>Distrito (top 10)</h3><canvas id="c_distr"></canvas></div>
+    <div class="card"><h3>Consentimiento informado</h3><canvas id="c_consent"></canvas></div>
+    <div class="card"><h3>¿Acepta ser recontactado/a?</h3><canvas id="c_recon"></canvas></div>
+  </div>
+
+  <div class="section"><h2>Regularización y documentos · núcleo RDD</h2>
+    <div class="d">Resultados clave según el documento migratorio vigente (% por columna).</div></div>
+  <div class="grid">
     <div class="card"><h3>Documento actual en Perú</h3><canvas id="c_doc"></canvas></div>
-    <div class="card"><h3>Nivel educativo</h3><canvas id="c_edu"></canvas></div>
     <div class="card"><h3>Tipo de ingreso al Perú</h3><canvas id="c_entry"></canvas></div>
-    <div class="card"><h3>¿Tiene cuenta de ahorros?</h3><canvas id="c_bank"></canvas></div>
-    <div class="card"><h3>¿Está empleado/a?</h3><canvas id="c_emp"></canvas></div>
+    <div class="card wide"><h3>Empleo según documento (% por documento)</h3><canvas id="c_docemp"></canvas></div>
+    <div class="card wide"><h3>Cuenta bancaria según documento (% por documento)</h3><canvas id="c_docbank"></canvas></div>
+    <div class="card wide"><h3>Nivel educativo según documento (% por documento)</h3><canvas id="c_docedu"></canvas></div>
+    <div class="card"><h3>Nivel educativo</h3><canvas id="c_edu"></canvas></div>
+    <div class="card"><h3>¿Sabía del cierre del PTP?</h3><canvas id="c_aware"></canvas></div>
+    <div class="card"><h3>¿Recuerda la fecha de corte?</h3><canvas id="c_cutoff"></canvas></div>
+    <div class="card"><h3>¿Solicitó protección?</h3><canvas id="c_applied"></canvas></div>
+    <div class="card"><h3>Resultado de la solicitud de protección</h3><canvas id="c_protout"></canvas></div>
+  </div>
+
+  <div class="section"><h2>Bienestar · salud mental</h2>
+    <div class="d">Ansiedad (GAD-7) y depresión (PHQ-2). Promedios e índice de severidad.</div></div>
+  <div class="grid">
     <div class="card"><h3>GAD-7: promedio por ítem (0–3)</h3><canvas id="c_gad"></canvas></div>
     <div class="card"><h3>GAD-7: severidad (puntaje 0–21)</h3><canvas id="c_gadsev"></canvas></div>
     <div class="card"><h3>PHQ-2: promedio por ítem (0–3)</h3><canvas id="c_phq"></canvas></div>
+    <div class="card wide"><h3>Severidad GAD-7 según documento (% por documento)</h3><canvas id="c_gaddoc"></canvas></div>
+  </div>
+
+  <div class="section"><h2>Economía y sociedad</h2>
+    <div class="d">Suficiencia de ingresos, vulnerabilidad, discriminación e intención de permanencia.</div></div>
+  <div class="grid">
+    <div class="card"><h3>¿El ingreso del hogar alcanza?</h3><canvas id="c_income"></canvas></div>
+    <div class="card"><h3>Inseguridad alimentaria</h3><canvas id="c_food"></canvas></div>
+    <div class="card"><h3>Fragilidad financiera</h3><canvas id="c_frag"></canvas></div>
+    <div class="card"><h3>Discriminación por nacionalidad</h3><canvas id="c_discrim"></canvas></div>
+    <div class="card"><h3>Intención de quedarse en Perú</h3><canvas id="c_stay"></canvas></div>
+    <div class="card"><h3>¿Está empleado/a?</h3><canvas id="c_emp"></canvas></div>
+    <div class="card"><h3>¿Tiene cuenta de ahorros?</h3><canvas id="c_bank"></canvas></div>
   </div>
 </div>
 <footer>Fuente: KoboToolbox · Generado automáticamente · Solo agregados — ninguna respuesta individual es identificable.</footer>
@@ -219,28 +365,64 @@ function donut(id, labels, data) {{
     data:{{ labels, datasets:[{{ data, backgroundColor:PAL }}] }},
     options:{{ plugins:{{legend:{{position:'bottom'}}}} }} }});
 }}
-function line(id, labels, data) {{
-  new Chart(document.getElementById(id), {{ type:'line',
-    data:{{ labels, datasets:[{{ data, borderColor:AC, backgroundColor:'rgba(74,134,232,.2)', fill:true, tension:.3 }}] }},
-    options:{{ plugins:{{legend:{{display:false}}}}, scales:{{ x:{{grid:{{color:GRID}}}}, y:{{grid:{{color:GRID}}}} }} }} }});
+function dayChart(id, labels, daily, cum) {{
+  if(!labels.length) return;
+  const roll = daily.map((_,i)=>{{ const s=daily.slice(Math.max(0,i-6),i+1);
+    return Math.round(s.reduce((a,b)=>a+b,0)/s.length*10)/10; }});
+  new Chart(document.getElementById(id), {{ type:'bar',
+    data:{{ labels, datasets:[
+      {{ label:'Por día', data:daily, backgroundColor:AC, order:3, yAxisID:'y' }},
+      {{ label:'Media móvil 7d', data:roll, type:'line', borderColor:'#ffad47', backgroundColor:'transparent', tension:.3, order:2, yAxisID:'y' }},
+      {{ label:'Acumulado', data:cum, type:'line', borderColor:'#43d692', backgroundColor:'rgba(67,214,146,.12)', fill:true, tension:.3, order:1, yAxisID:'y1' }} ]}},
+    options:{{ plugins:{{legend:{{position:'bottom'}}}},
+      scales:{{ x:{{grid:{{color:GRID}}}},
+        y:{{position:'left', grid:{{color:GRID}}, title:{{display:true, text:'Por día'}}}},
+        y1:{{position:'right', grid:{{drawOnChartArea:false}}, title:{{display:true, text:'Acumulado'}}}} }} }} }});
 }}
-line('c_day', D.day[0], D.day[1]);
+function stacked(id, ct, asPct) {{
+  if(!ct || !ct.cats.length) return;
+  new Chart(document.getElementById(id), {{ type:'bar',
+    data:{{ labels:ct.cats, datasets:ct.series.map((s,i)=>(
+      {{ label:s.name, data:s.data, backgroundColor:PAL[i%PAL.length] }})) }},
+    options:{{ indexAxis:'y', plugins:{{ legend:{{position:'bottom'}},
+        tooltip:{{ callbacks:{{ label:c=>` ${{c.dataset.label}}: ${{c.parsed.x}}${{asPct?'%':''}}` }} }} }},
+      scales:{{ x:{{ stacked:true, grid:{{color:GRID}}, max:asPct?100:undefined,
+          ticks:{{ callback:v=>asPct?v+'%':v }} }},
+        y:{{ stacked:true, grid:{{color:GRID}} }} }} }} }});
+}}
+dayChart('c_day', D.day[0], D.day[1], D.cum);
 donut('c_gender', D.gender[0], D.gender[1]);
 bar('c_depto', D.depto[0], D.depto[1], true);
 bar('c_distr', D.distr[0], D.distr[1], true);
+donut('c_consent', D.consent[0], D.consent[1]);
+donut('c_recon', D.recontact[0], D.recontact[1]);
 bar('c_doc', D.doc[0], D.doc[1], true);
-bar('c_edu', D.edu[0], D.edu[1], true);
 donut('c_entry', D.entry[0], D.entry[1]);
-donut('c_bank', D.bank[0], D.bank[1]);
-donut('c_emp', D.emp[0], D.emp[1]);
+stacked('c_docemp', D.doc_x_emp, true);
+stacked('c_docbank', D.doc_x_bank, true);
+stacked('c_docedu', D.doc_x_edu, true);
+bar('c_edu', D.edu[0], D.edu[1], true);
+bar('c_aware', D.aware[0], D.aware[1], true);
+bar('c_cutoff', D.cutoff[0], D.cutoff[1], true);
+donut('c_applied', D.applied[0], D.applied[1]);
+donut('c_protout', D.protout[0], D.protout[1]);
 bar('c_gad', D.gad[0], D.gad[1], false);
 bar('c_gadsev', D.gadsev[0], D.gadsev[1], false);
 bar('c_phq', D.phq[0], D.phq[1], false);
+stacked('c_gaddoc', D.gad_x_doc, true);
+bar('c_income', D.income[0], D.income[1], true);
+donut('c_food', D.food[0], D.food[1]);
+donut('c_frag', D.frag[0], D.frag[1]);
+bar('c_discrim', D.discrim[0], D.discrim[1], true);
+bar('c_stay', D.stay[0], D.stay[1], true);
+donut('c_emp', D.emp[0], D.emp[1]);
+donut('c_bank', D.bank[0], D.bank[1]);
 // KPIs derivados
 const days = D.day[0], dc = D.day[1];
 if(days.length) {{
   const last7 = dc.slice(-7).reduce((a,b)=>a+b,0);
   document.getElementById('kpi7').textContent = last7;
+  document.getElementById('kpiavg').textContent = (last7/Math.min(7,dc.length)).toFixed(1);
   const mi = dc.indexOf(Math.max(...dc));
   document.getElementById('kpiday').textContent = days[mi];
 }}
@@ -256,23 +438,62 @@ def main():
     rows = to_leaf_rows(subs)
     total = len(rows)
 
+    # Órdenes fijos para escalas ordinales / códigos categóricos.
+    DOC_ORDER = ['3', '2', '1', '5', '4', '6', '0']   # PTP→CPP→CE→refugio→DNI→vencido→ninguno
+    YESNO = ['1', '2']
+    EDU_ORDER = [str(i) for i in range(8)]            # 0..7
+    INCOME_ORDER = ['1', '2', '3', '4']
+    AWARE_ORDER = ['1', '2', '3', '88']
+    CUTOFF_ORDER = ['1', '2', '3']
+    STAY_ORDER = ['1', '2', '3', '4', '5']
+    APPLIED_ORDER = ['1', '2', '3', '4']
+    PROTOUT_ORDER = ['1', '2', '3', '4']
+
+    days, dcounts = per_day(rows)
+    cum, run = [], 0
+    for n in dcounts:
+        run += n
+        cum.append(run)
+
     agg = {
-        'day':    list(per_day(rows)),
-        'gender': list(counts(rows, 'gender')),
-        'depto':  list(counts(rows, 'departamento', top=12)),
-        'distr':  list(counts(rows, 'distrito', top=10)),
-        'doc':    list(counts(rows, 'main_current_doc_pe')),
-        'edu':    list(counts(rows, 'edu_level')),
-        'entry':  list(counts(rows, 'entry_regular')),
-        'bank':   list(counts(rows, 'has_bank_account')),
-        'emp':    list(counts(rows, 'employed')),
-        'gad':    [GAD7_LBL, mean_items(rows, GAD7)],
-        'gadsev': list(gad7_score_dist(rows)),
-        'phq':    [PHQ2_LBL, mean_items(rows, PHQ2)],
+        'day':       [days, dcounts],
+        'cum':       cum,
+        'gender':    list(counts(rows, 'gender')),
+        'depto':     list(counts(rows, 'departamento', top=12)),
+        'distr':     list(counts(rows, 'distrito', top=10)),
+        'consent':   list(dist(rows, 'consent', ['1', '0'])),
+        'recontact': list(recontact_agg(subs)),
+        'doc':       list(dist(rows, 'main_current_doc_pe', DOC_ORDER)),
+        'entry':     list(counts(rows, 'entry_regular')),
+        'doc_x_emp':  crosstab(rows, 'main_current_doc_pe', 'employed', DOC_ORDER, YESNO),
+        'doc_x_bank': crosstab(rows, 'main_current_doc_pe', 'has_bank_account', DOC_ORDER, YESNO),
+        'doc_x_edu':  crosstab(rows, 'main_current_doc_pe', 'edu_level', DOC_ORDER, EDU_ORDER),
+        'edu':       list(dist(rows, 'edu_level', EDU_ORDER)),
+        'aware':     list(dist(rows, 'aware_ptp_closing', AWARE_ORDER)),
+        'cutoff':    list(dist(rows, 'knows_cutoff', CUTOFF_ORDER)),
+        'applied':   list(dist(rows, 'applied_protection', APPLIED_ORDER)),
+        'protout':   list(dist(rows, 'protection_outcome', PROTOUT_ORDER)),
+        'gad':       [GAD7_LBL, mean_items(rows, GAD7)],
+        'gadsev':    list(gad7_score_dist(rows)),
+        'phq':       [PHQ2_LBL, mean_items(rows, PHQ2)],
+        'gad_x_doc': gad_sev_by_group(rows, 'main_current_doc_pe', DOC_ORDER),
+        'income':    list(dist(rows, 'income_sufficiency', INCOME_ORDER)),
+        'food':      list(counts(rows, 'food_insecurity')),
+        'frag':      list(counts(rows, 'financial_fragility')),
+        'discrim':   list(counts(rows, 'discrim_nationality')),
+        'stay':      list(dist(rows, 'intention_stay', STAY_ORDER)),
+        'emp':       list(counts(rows, 'employed')),
+        'bank':      list(counts(rows, 'has_bank_account')),
     }
+    consent_pct = pct_value(rows, 'consent', '1')
+    recon_lbls, recon_vals = agg['recontact']
+    rtot = sum(recon_vals)
+    recontact_pct = round(100 * recon_vals[0] / rtot) if rtot else 0
+
     updated = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')
-    (HERE / 'index.html').write_text(build_html(agg, total, updated),
-                                     encoding='utf-8')
+    (HERE / 'index.html').write_text(
+        build_html(agg, total, updated, consent_pct, recontact_pct),
+        encoding='utf-8')
     print(f'OK — {total} respuestas → index.html ({updated})')
 
 
