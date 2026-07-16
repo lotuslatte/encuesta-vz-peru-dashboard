@@ -23,12 +23,21 @@
   .card.wide { grid-column:1 / -1; }
   .card h3 { margin:0 0 12px; font-size:14px; font-weight:600; color:var(--ink); }
   canvas { max-height:300px; }
+  .tabs { display:flex; gap:6px; flex-wrap:wrap; margin:18px 0 4px; border-bottom:1px solid #232b34; }
+  .tabs button { background:transparent; border:0; border-bottom:2px solid transparent; color:var(--mut);
+    font:inherit; font-size:14px; padding:10px 14px; cursor:pointer; }
+  .tabs button:hover { color:var(--ink); }
+  .tabs button.on { color:var(--ink); border-bottom-color:var(--ac); font-weight:600; }
+  .tab { display:none; }
+  .tab.active { display:block; }
+  .note { color:var(--mut); font-size:12px; margin:6px 0 0; }
+  .warn { color:#f6919b; }
   footer { color:var(--mut); font-size:12px; padding:18px 28px; border-top:1px solid #232b34; }
 </style></head>
 <body>
 <header>
   <h1>Encuesta para población venezolana en Perú</h1>
-  <div class="sub">Tablero de seguimiento — datos agregados (sin información personal) · Actualizado: 2026-07-16 21:13 UTC</div>
+  <div class="sub">Tablero de seguimiento — datos agregados (sin información personal) · Actualizado: 2026-07-16 21:27 UTC</div>
 </header>
 <div class="wrap">
   <div class="kpis">
@@ -40,6 +49,15 @@
     <div class="kpi"><div class="n">92%</div><div class="l">Acepta recontacto</div></div>
   </div>
 
+  <nav class="tabs" id="tabs">
+    <button class="on" data-tab="principal">Principal</button>
+    <button data-tab="demografia">Demografía</button>
+    <button data-tab="prepost">Pre/Post del corte</button>
+    <button data-tab="calidad">Calidad de datos</button>
+    <button data-tab="recon">Enviados vs Respuesta</button>
+  </nav>
+
+  <div class="tab active" id="tab-principal">
   <div class="section"><h2>Seguimiento de campo</h2>
     <div class="d">Ritmo de respuestas y disposición de los participantes.</div></div>
   <div class="grid">
@@ -86,10 +104,60 @@
     <div class="card"><h3>¿Está empleado/a?</h3><canvas id="c_emp"></canvas></div>
     <div class="card"><h3>¿Tiene cuenta de ahorros?</h3><canvas id="c_bank"></canvas></div>
   </div>
+  </div><!-- /tab-principal -->
+
+  <div class="tab" id="tab-demografia">
+  <div class="section"><h2>Demografía</h2>
+    <div class="d">Perfil de quienes respondieron.</div></div>
+  <div class="grid">
+    <div class="card"><h3>Edad (grupos)</h3><canvas id="c_ageband"></canvas></div>
+    <div class="card"><h3>Edad (distribución)</h3><canvas id="c_agehist"></canvas></div>
+    <div class="card"><h3>Género</h3><canvas id="c_gender2"></canvas></div>
+    <div class="card"><h3>Estado civil</h3><canvas id="c_civil"></canvas></div>
+    <div class="card"><h3>Años en Perú</h3><canvas id="c_yip"></canvas></div>
+  </div>
+  <p class="note">La edad se deriva de la fecha de nacimiento (disponible en la versión vigente del formulario).</p>
+  </div><!-- /tab-demografia -->
+
+  <div class="tab" id="tab-prepost">
+  <div class="section"><h2>Pre / Post del cierre del PTP</h2>
+    <div class="d">Indicadores según el lado del corte (31-oct-2018), la variable de asignación del diseño RDD. % por lado.</div></div>
+  <div class="grid">
+    <div class="card"><h3>Respuestas por lado</h3><canvas id="c_lado"></canvas></div>
+    <div class="card"><h3>Empleo por lado (%)</h3><canvas id="c_lado_emp"></canvas></div>
+    <div class="card"><h3>Cuenta bancaria por lado (%)</h3><canvas id="c_lado_bank"></canvas></div>
+    <div class="card wide"><h3>Documento actual por lado (%)</h3><canvas id="c_lado_doc"></canvas></div>
+    <div class="card wide"><h3>Severidad GAD-7 por lado (%)</h3><canvas id="c_lado_gad"></canvas></div>
+  </div>
+  <p class="note">Lado derivado de la fecha de ingreso reportada; exploratorio (aún no es el estimador RDD).</p>
+  </div><!-- /tab-prepost -->
+
+  <div class="tab" id="tab-calidad">
+  <div class="section"><h2>Calidad de datos</h2>
+    <div class="d">Señales de calidad del trabajo de campo (agregado).</div></div>
+  <div class="kpis">
+    <div class="kpi"><div class="n" id="q_att">—</div><div class="l">Attention-check aprobado</div></div>
+    <div class="kpi"><div class="n" id="q_dur">—</div><div class="l">Duración mediana (min)</div></div>
+    <div class="kpi"><div class="n" id="q_spd">—</div><div class="l">Speeders (&lt;7 min)</div></div>
+  </div>
+  <div class="grid">
+    <div class="card"><h3>Duración de la encuesta (min)</h3><canvas id="c_durhist"></canvas></div>
+    <div class="card"><h3>Straightlining (respuestas idénticas)</h3><canvas id="c_straight"></canvas></div>
+    <div class="card"><h3>Completos vs breakoffs</h3><canvas id="c_complete"></canvas></div>
+    <div class="card"><h3>Versión del formulario</h3><canvas id="c_version"></canvas></div>
+  </div>
+  <p class="note">El attention-check ("¿10 + 1?") se bloquea en el formulario, así que &gt;0 fallos merece revisión.</p>
+  </div><!-- /tab-calidad -->
+
+  <div class="tab" id="tab-recon">
+  <div class="section"><h2>Enviados vs Respuesta</h2>
+    <div class="d">Cobertura de campo: personas contactadas (hoja de seguimiento) vs. encuestas realmente recibidas en KOBO. Solo conteos agregados — sin nombres ni teléfonos.</div></div>
+  <div id="recon_body"></div>
+  </div><!-- /tab-recon -->
 </div>
-<footer>Fuente: KoboToolbox · Generado automáticamente · Solo agregados — ninguna respuesta individual es identificable.</footer>
+<footer>Fuente: KoboToolbox + seguimiento de campo · Generado automáticamente · Solo agregados — ninguna respuesta individual es identificable.</footer>
 <script>
-const D = {"day": [["2026-06-14", "2026-06-15", "2026-06-16", "2026-06-17", "2026-06-19", "2026-06-21", "2026-06-22", "2026-06-26", "2026-06-27", "2026-06-28", "2026-06-29", "2026-07-01", "2026-07-03", "2026-07-04", "2026-07-05", "2026-07-07", "2026-07-10", "2026-07-11", "2026-07-12", "2026-07-13", "2026-07-14", "2026-07-15", "2026-07-16"], [2, 2, 5, 1, 1, 1, 1, 4, 6, 2, 3, 1, 1, 1, 1, 4, 11, 8, 10, 2, 6, 2, 2]], "cum": [2, 4, 9, 10, 11, 12, 13, 17, 23, 25, 28, 29, 30, 31, 32, 36, 47, 55, 65, 67, 73, 75, 77], "gender": [["Mujer", "Hombre", "Otro"], [52, 22, 3]], "depto": [["LIMA", "AREQUIPA", "TUMBES", "CALLAO", "PIURA", "LA LIBERTAD", "JUNIN", "MADRE DE DIOS"], [51, 7, 5, 4, 4, 3, 2, 1]], "distr": [["VILLA EL SALVADOR", "SAN MARTIN DE PORRES", "ATE", "SURQUILLO", "CALLAO", "COMAS", "SAN JUAN DE LURIGANCHO", "SAN JUAN DE MIRAFLORES", "VILLA MARIA DEL TRIUNFO", "EL AGUSTINO"], [7, 6, 4, 4, 3, 3, 3, 3, 3, 3]], "consent": [["Acepta", "Rechaza"], [77, 0]], "recontact": [["Sí", "No"], [71, 6]], "doc": [["Permiso Temporal de Permanencia (PTP) vigente", "Carné de Permiso Temporal de Permanencia (CPP) vigente", "Carné de Extranjería (CE) vigente", "Carné de solicitante de refugio", "DNI peruano (nacionalidad peruana)", "Documento vencido (CE, CPP o PTP vencido)", "No tiene ningún documento de identificación emitido por Perú"], [1, 2, 68, 1, 2, 1, 2]], "entry": [["Regular (con documentos vigentes)", "Irregular (sin documentos)", "No recuerda / no sabe"], [61, 15, 1]], "doc_x_emp": {"cats": ["Permiso Temporal de Permanencia (PTP) vigente", "Carné de Permiso Temporal de Permanencia (CPP) vigente", "Carné de Extranjería (CE) vigente", "Carné de solicitante de refugio", "DNI peruano (nacionalidad peruana)", "Documento vencido (CE, CPP o PTP vencido)", "No tiene ningún documento de identificación emitido por Perú"], "series": [{"name": "Sí", "data": [0.0, 0.0, 55.9, 0.0, 100.0, 100.0, 50.0]}, {"name": "No", "data": [100.0, 100.0, 44.1, 100.0, 0.0, 0.0, 50.0]}]}, "doc_x_bank": {"cats": ["Permiso Temporal de Permanencia (PTP) vigente", "Carné de Permiso Temporal de Permanencia (CPP) vigente", "Carné de Extranjería (CE) vigente", "Carné de solicitante de refugio", "DNI peruano (nacionalidad peruana)", "Documento vencido (CE, CPP o PTP vencido)", "No tiene ningún documento de identificación emitido por Perú"], "series": [{"name": "Sí", "data": [0.0, 100.0, 86.8, 0.0, 100.0, 100.0, 0.0]}, {"name": "No", "data": [100.0, 0.0, 13.2, 100.0, 0.0, 0.0, 100.0]}]}, "doc_x_edu": {"cats": ["Permiso Temporal de Permanencia (PTP) vigente", "Carné de Permiso Temporal de Permanencia (CPP) vigente", "Carné de Extranjería (CE) vigente", "Carné de solicitante de refugio", "DNI peruano (nacionalidad peruana)", "Documento vencido (CE, CPP o PTP vencido)", "No tiene ningún documento de identificación emitido por Perú"], "series": [{"name": "Ninguno", "data": [0.0, 0.0, 11.8, 0.0, 0.0, 0.0, 0.0]}, {"name": "Primaria incompleta", "data": [100.0, 0.0, 2.9, 0.0, 0.0, 0.0, 0.0]}, {"name": "Secundaria incompleta", "data": [0.0, 0.0, 10.3, 0.0, 0.0, 0.0, 0.0]}, {"name": "Secundaria completa", "data": [0.0, 100.0, 14.7, 100.0, 0.0, 0.0, 0.0]}, {"name": "Superior/técnica incompleta", "data": [0.0, 0.0, 10.3, 0.0, 0.0, 0.0, 0.0]}, {"name": "Superior/técnica completa", "data": [0.0, 0.0, 29.4, 0.0, 50.0, 100.0, 50.0]}, {"name": "Especialización/Maestria/Doctorado", "data": [0.0, 0.0, 16.2, 0.0, 50.0, 0.0, 50.0]}]}, "edu": [["Ninguno", "Primaria incompleta", "Primaria completa", "Secundaria incompleta", "Secundaria completa", "Superior/técnica incompleta", "Superior/técnica completa", "Especialización/Maestria/Doctorado"], [8, 3, 0, 7, 13, 7, 23, 13]], "aware": [["Sí, sabía que se iba a cerrar y eso influyó en mi decisión de cuándo venir", "Sí, sabía pero no influyó en mi decisión", "No, no sabía", "No recuerdo"], [4, 1, 14, 1]], "cutoff": [["Sí, lo recuerdo claramente", "Lo he escuchado, pero no estoy seguro/a de los detalles", "No, no lo recuerdo"], [21, 31, 25]], "applied": [["Sí, refugio", "Sí, visa humanitaria", "Sí, asilo", "No"], [24, 0, 0, 53]], "protout": [["Aprobado (reconocido como refugiado)", "Rechazado", "Todavía en trámite", "Abandoné el proceso"], [7, 1, 8, 8]], "gad": [["Nervioso", "Sin control", "Preocupación", "Relajarse", "Inquieto", "Irritable", "Miedo"], [1.66, 1.6, 1.65, 1.53, 1.43, 1.22, 1.05]], "gadsev": [["Mínima (0-4)", "Leve (5-9)", "Moderada (10-14)", "Severa (15-21)"], [8, 37, 12, 20]], "phq": [["Poco interés", "Decaído"], [1.08, 1.25]], "gad_x_doc": {"cats": ["Permiso Temporal de Permanencia (PTP) vigente", "Carné de Permiso Temporal de Permanencia (CPP) vigente", "Carné de Extranjería (CE) vigente", "Carné de solicitante de refugio", "DNI peruano (nacionalidad peruana)", "Documento vencido (CE, CPP o PTP vencido)", "No tiene ningún documento de identificación emitido por Perú"], "series": [{"name": "Mínima (0-4)", "data": [100.0, 0.0, 8.8, 0.0, 50.0, 0.0, 0.0]}, {"name": "Leve (5-9)", "data": [0.0, 50.0, 52.9, 0.0, 0.0, 0.0, 0.0]}, {"name": "Moderada (10-14)", "data": [0.0, 50.0, 13.2, 0.0, 0.0, 0.0, 100.0]}, {"name": "Severa (15-21)", "data": [0.0, 0.0, 25.0, 100.0, 50.0, 100.0, 0.0]}]}, "income": [["Les alcanza bien y pueden ahorrar", "Les alcanza justo sin grandes dificultades", "No les alcanza y tienen dificultades", "No les alcanza y tienen grandes dificultades"], [7, 22, 33, 15]], "food": [["Sí", "No"], [43, 34]], "frag": [["No", "Sí", "No sé"], [65, 7, 5]], "discrim": [["No", "Sí"], [49, 28]], "stay": [["Definitivamente sí", "Probablemente sí", "No lo sé / No estoy seguro/a", "Probablemente no", "Definitivamente no"], [24, 35, 16, 1, 1]], "emp": [["Sí", "No"], [42, 35]], "bank": [["Sí", "No"], [64, 13]]};
+const D = {"day": [["2026-06-14", "2026-06-15", "2026-06-16", "2026-06-17", "2026-06-19", "2026-06-21", "2026-06-22", "2026-06-26", "2026-06-27", "2026-06-28", "2026-06-29", "2026-07-01", "2026-07-03", "2026-07-04", "2026-07-05", "2026-07-07", "2026-07-10", "2026-07-11", "2026-07-12", "2026-07-13", "2026-07-14", "2026-07-15", "2026-07-16"], [2, 2, 5, 1, 1, 1, 1, 4, 6, 2, 3, 1, 1, 1, 1, 4, 11, 8, 10, 2, 6, 2, 2]], "cum": [2, 4, 9, 10, 11, 12, 13, 17, 23, 25, 28, 29, 30, 31, 32, 36, 47, 55, 65, 67, 73, 75, 77], "gender": [["Mujer", "Hombre", "Otro"], [52, 22, 3]], "depto": [["LIMA", "AREQUIPA", "TUMBES", "CALLAO", "PIURA", "LA LIBERTAD", "JUNIN", "MADRE DE DIOS"], [51, 7, 5, 4, 4, 3, 2, 1]], "distr": [["VILLA EL SALVADOR", "SAN MARTIN DE PORRES", "ATE", "SURQUILLO", "CALLAO", "COMAS", "SAN JUAN DE LURIGANCHO", "SAN JUAN DE MIRAFLORES", "VILLA MARIA DEL TRIUNFO", "EL AGUSTINO"], [7, 6, 4, 4, 3, 3, 3, 3, 3, 3]], "consent": [["Acepta", "Rechaza"], [77, 0]], "recontact": [["Sí", "No"], [71, 6]], "doc": [["Permiso Temporal de Permanencia (PTP) vigente", "Carné de Permiso Temporal de Permanencia (CPP) vigente", "Carné de Extranjería (CE) vigente", "Carné de solicitante de refugio", "DNI peruano (nacionalidad peruana)", "Documento vencido (CE, CPP o PTP vencido)", "No tiene ningún documento de identificación emitido por Perú"], [1, 2, 68, 1, 2, 1, 2]], "entry": [["Regular (con documentos vigentes)", "Irregular (sin documentos)", "No recuerda / no sabe"], [61, 15, 1]], "doc_x_emp": {"cats": ["Permiso Temporal de Permanencia (PTP) vigente", "Carné de Permiso Temporal de Permanencia (CPP) vigente", "Carné de Extranjería (CE) vigente", "Carné de solicitante de refugio", "DNI peruano (nacionalidad peruana)", "Documento vencido (CE, CPP o PTP vencido)", "No tiene ningún documento de identificación emitido por Perú"], "series": [{"name": "Sí", "data": [0.0, 0.0, 55.9, 0.0, 100.0, 100.0, 50.0]}, {"name": "No", "data": [100.0, 100.0, 44.1, 100.0, 0.0, 0.0, 50.0]}]}, "doc_x_bank": {"cats": ["Permiso Temporal de Permanencia (PTP) vigente", "Carné de Permiso Temporal de Permanencia (CPP) vigente", "Carné de Extranjería (CE) vigente", "Carné de solicitante de refugio", "DNI peruano (nacionalidad peruana)", "Documento vencido (CE, CPP o PTP vencido)", "No tiene ningún documento de identificación emitido por Perú"], "series": [{"name": "Sí", "data": [0.0, 100.0, 86.8, 0.0, 100.0, 100.0, 0.0]}, {"name": "No", "data": [100.0, 0.0, 13.2, 100.0, 0.0, 0.0, 100.0]}]}, "doc_x_edu": {"cats": ["Permiso Temporal de Permanencia (PTP) vigente", "Carné de Permiso Temporal de Permanencia (CPP) vigente", "Carné de Extranjería (CE) vigente", "Carné de solicitante de refugio", "DNI peruano (nacionalidad peruana)", "Documento vencido (CE, CPP o PTP vencido)", "No tiene ningún documento de identificación emitido por Perú"], "series": [{"name": "Ninguno", "data": [0.0, 0.0, 11.8, 0.0, 0.0, 0.0, 0.0]}, {"name": "Primaria incompleta", "data": [100.0, 0.0, 2.9, 0.0, 0.0, 0.0, 0.0]}, {"name": "Secundaria incompleta", "data": [0.0, 0.0, 10.3, 0.0, 0.0, 0.0, 0.0]}, {"name": "Secundaria completa", "data": [0.0, 100.0, 14.7, 100.0, 0.0, 0.0, 0.0]}, {"name": "Superior/técnica incompleta", "data": [0.0, 0.0, 10.3, 0.0, 0.0, 0.0, 0.0]}, {"name": "Superior/técnica completa", "data": [0.0, 0.0, 29.4, 0.0, 50.0, 100.0, 50.0]}, {"name": "Especialización/Maestria/Doctorado", "data": [0.0, 0.0, 16.2, 0.0, 50.0, 0.0, 50.0]}]}, "edu": [["Ninguno", "Primaria incompleta", "Primaria completa", "Secundaria incompleta", "Secundaria completa", "Superior/técnica incompleta", "Superior/técnica completa", "Especialización/Maestria/Doctorado"], [8, 3, 0, 7, 13, 7, 23, 13]], "aware": [["Sí, sabía que se iba a cerrar y eso influyó en mi decisión de cuándo venir", "Sí, sabía pero no influyó en mi decisión", "No, no sabía", "No recuerdo"], [4, 1, 14, 1]], "cutoff": [["Sí, lo recuerdo claramente", "Lo he escuchado, pero no estoy seguro/a de los detalles", "No, no lo recuerdo"], [21, 31, 25]], "applied": [["Sí, refugio", "Sí, visa humanitaria", "Sí, asilo", "No"], [24, 0, 0, 53]], "protout": [["Aprobado (reconocido como refugiado)", "Rechazado", "Todavía en trámite", "Abandoné el proceso"], [7, 1, 8, 8]], "gad": [["Nervioso", "Sin control", "Preocupación", "Relajarse", "Inquieto", "Irritable", "Miedo"], [1.66, 1.6, 1.65, 1.53, 1.43, 1.22, 1.05]], "gadsev": [["Mínima (0-4)", "Leve (5-9)", "Moderada (10-14)", "Severa (15-21)"], [8, 37, 12, 20]], "phq": [["Poco interés", "Decaído"], [1.08, 1.25]], "gad_x_doc": {"cats": ["Permiso Temporal de Permanencia (PTP) vigente", "Carné de Permiso Temporal de Permanencia (CPP) vigente", "Carné de Extranjería (CE) vigente", "Carné de solicitante de refugio", "DNI peruano (nacionalidad peruana)", "Documento vencido (CE, CPP o PTP vencido)", "No tiene ningún documento de identificación emitido por Perú"], "series": [{"name": "Mínima (0-4)", "data": [100.0, 0.0, 8.8, 0.0, 50.0, 0.0, 0.0]}, {"name": "Leve (5-9)", "data": [0.0, 50.0, 52.9, 0.0, 0.0, 0.0, 0.0]}, {"name": "Moderada (10-14)", "data": [0.0, 50.0, 13.2, 0.0, 0.0, 0.0, 100.0]}, {"name": "Severa (15-21)", "data": [0.0, 0.0, 25.0, 100.0, 50.0, 100.0, 0.0]}]}, "income": [["Les alcanza bien y pueden ahorrar", "Les alcanza justo sin grandes dificultades", "No les alcanza y tienen dificultades", "No les alcanza y tienen grandes dificultades"], [7, 22, 33, 15]], "food": [["Sí", "No"], [43, 34]], "frag": [["No", "Sí", "No sé"], [65, 7, 5]], "discrim": [["No", "Sí"], [49, 28]], "stay": [["Definitivamente sí", "Probablemente sí", "No lo sé / No estoy seguro/a", "Probablemente no", "Definitivamente no"], [24, 35, 16, 1, 1]], "emp": [["Sí", "No"], [42, 35]], "bank": [["Sí", "No"], [64, 13]], "age_band": [["18-29", "30-44", "45+"], [2, 26, 20]], "age_hist": [["18-24", "25-34", "35-44", "45-54", "55-64", "65+"], [0, 11, 17, 12, 7, 1]], "civil": [["Soltero/a", "Casado/a", "Conviviente", "Divorciado/a", "Separado/a", "Viudo/a"], [47, 14, 11, 0, 5, 0]], "yip_hist": [["0-1", "2-3", "4-5", "6-7", "8-9", "10+"], [2, 3, 7, 42, 22, 1]], "lado": [["Pre", "Post"], [33, 44]], "lado_x_emp": {"cats": ["Pre", "Post"], "series": [{"name": "Sí", "data": [51.5, 56.8]}, {"name": "No", "data": [48.5, 43.2]}]}, "lado_x_bank": {"cats": ["Pre", "Post"], "series": [{"name": "Sí", "data": [87.9, 79.5]}, {"name": "No", "data": [12.1, 20.5]}]}, "lado_x_doc": {"cats": ["Pre", "Post"], "series": [{"name": "Permiso Temporal de Permanencia (PTP) vigente", "data": [3.0, 0.0]}, {"name": "Carné de Permiso Temporal de Permanencia (CPP) vigente", "data": [3.0, 2.3]}, {"name": "Carné de Extranjería (CE) vigente", "data": [90.9, 86.4]}, {"name": "Carné de solicitante de refugio", "data": [0.0, 2.3]}, {"name": "DNI peruano (nacionalidad peruana)", "data": [0.0, 4.5]}, {"name": "Documento vencido (CE, CPP o PTP vencido)", "data": [3.0, 0.0]}, {"name": "No tiene ningún documento de identificación emitido por Perú", "data": [0.0, 4.5]}]}, "lado_x_gad": {"cats": ["Pre", "Post"], "series": [{"name": "Mínima (0-4)", "data": [15.2, 6.8]}, {"name": "Leve (5-9)", "data": [42.4, 52.3]}, {"name": "Moderada (10-14)", "data": [15.2, 15.9]}, {"name": "Severa (15-21)", "data": [27.3, 25.0]}]}, "quality": {"attention_pass": 100, "dur_median": 25.1, "speeders": 0, "dur_hist": [["<5", "5-10", "10-15", "15-20", "20-30", "30-45", "45-90", "90+"], [0, 1, 4, 14, 25, 17, 10, 4]], "straight": [["GAD-7 (7 ítems)", "Confianza (0-10)"], [7, 8]], "complete": [["Completos", "Breakoffs"], [77, 0]], "version": [["anterior"], [77]]}, "tracker": {"contactados": 485, "enviados": 444, "hizo": 8, "contesto": 14, "en_kobo": 29, "en_kobo_env": 29, "tasa": 6.5, "matrix": {"cats": ["hizo la encuesta (equipo)", "contesto/comprometido", "enviada sin respuesta", "numero muerto", "rechazo"], "n": [8, 14, 422, 39, 2], "en_kobo": [6, 0, 23, 0, 0]}, "by_tanda": {"tandas": ["Muestra 1", "Muestra 2"], "contactados": [149, 336], "enviados": [120, 324], "en_kobo": [1, 28]}, "disc_hizo_sin_kobo": 2, "disc_kobo_no_marcado": 25, "kobo_fuera": 24, "_asof": "2026-07-16", "_kobo_n": 55}};
 const AC = '#4a86e8', GRID = '#232b34', INK = '#8b98a5';
 Chart.defaults.color = INK; Chart.defaults.borderColor = GRID;
 const PAL = ['#4a86e8','#43d692','#ffad47','#f6919b','#a479e2','#16a766','#f2c960','#e06666','#76a5af','#c27ba0'];
@@ -131,34 +199,96 @@ function stacked(id, ct, asPct) {
           ticks:{ callback:v=>asPct?v+'%':v } },
         y:{ stacked:true, grid:{color:GRID} } } } });
 }
-dayChart('c_day', D.day[0], D.day[1], D.cum);
-donut('c_gender', D.gender[0], D.gender[1]);
-bar('c_depto', D.depto[0], D.depto[1], true);
-bar('c_distr', D.distr[0], D.distr[1], true);
-donut('c_consent', D.consent[0], D.consent[1]);
-donut('c_recon', D.recontact[0], D.recontact[1]);
-bar('c_doc', D.doc[0], D.doc[1], true);
-donut('c_entry', D.entry[0], D.entry[1]);
-stacked('c_docemp', D.doc_x_emp, true);
-stacked('c_docbank', D.doc_x_bank, true);
-stacked('c_docedu', D.doc_x_edu, true);
-bar('c_edu', D.edu[0], D.edu[1], true);
-bar('c_aware', D.aware[0], D.aware[1], true);
-bar('c_cutoff', D.cutoff[0], D.cutoff[1], true);
-donut('c_applied', D.applied[0], D.applied[1]);
-donut('c_protout', D.protout[0], D.protout[1]);
-bar('c_gad', D.gad[0], D.gad[1], false);
-bar('c_gadsev', D.gadsev[0], D.gadsev[1], false);
-bar('c_phq', D.phq[0], D.phq[1], false);
-stacked('c_gaddoc', D.gad_x_doc, true);
-bar('c_income', D.income[0], D.income[1], true);
-donut('c_food', D.food[0], D.food[1]);
-donut('c_frag', D.frag[0], D.frag[1]);
-bar('c_discrim', D.discrim[0], D.discrim[1], true);
-bar('c_stay', D.stay[0], D.stay[1], true);
-donut('c_emp', D.emp[0], D.emp[1]);
-donut('c_bank', D.bank[0], D.bank[1]);
-// KPIs derivados
+function grouped(id, cats, n1, d1, n2, d2) {
+  if(!cats || !cats.length) return;
+  new Chart(document.getElementById(id), { type:'bar',
+    data:{ labels:cats, datasets:[
+      { label:n1, data:d1, backgroundColor:'#4a86e8' },
+      { label:n2, data:d2, backgroundColor:'#43d692' } ]},
+    options:{ indexAxis:'y', plugins:{legend:{position:'bottom'}},
+      scales:{ x:{grid:{color:GRID}}, y:{grid:{color:GRID}} } } });
+}
+function initPrincipal() {
+  dayChart('c_day', D.day[0], D.day[1], D.cum);
+  donut('c_gender', D.gender[0], D.gender[1]);
+  bar('c_depto', D.depto[0], D.depto[1], true);
+  bar('c_distr', D.distr[0], D.distr[1], true);
+  donut('c_consent', D.consent[0], D.consent[1]);
+  donut('c_recon', D.recontact[0], D.recontact[1]);
+  bar('c_doc', D.doc[0], D.doc[1], true);
+  donut('c_entry', D.entry[0], D.entry[1]);
+  stacked('c_docemp', D.doc_x_emp, true);
+  stacked('c_docbank', D.doc_x_bank, true);
+  stacked('c_docedu', D.doc_x_edu, true);
+  bar('c_edu', D.edu[0], D.edu[1], true);
+  bar('c_aware', D.aware[0], D.aware[1], true);
+  bar('c_cutoff', D.cutoff[0], D.cutoff[1], true);
+  donut('c_applied', D.applied[0], D.applied[1]);
+  donut('c_protout', D.protout[0], D.protout[1]);
+  bar('c_gad', D.gad[0], D.gad[1], false);
+  bar('c_gadsev', D.gadsev[0], D.gadsev[1], false);
+  bar('c_phq', D.phq[0], D.phq[1], false);
+  stacked('c_gaddoc', D.gad_x_doc, true);
+  bar('c_income', D.income[0], D.income[1], true);
+  donut('c_food', D.food[0], D.food[1]);
+  donut('c_frag', D.frag[0], D.frag[1]);
+  bar('c_discrim', D.discrim[0], D.discrim[1], true);
+  bar('c_stay', D.stay[0], D.stay[1], true);
+  donut('c_emp', D.emp[0], D.emp[1]);
+  donut('c_bank', D.bank[0], D.bank[1]);
+}
+function initDemo() {
+  donut('c_ageband', D.age_band[0], D.age_band[1]);
+  bar('c_agehist', D.age_hist[0], D.age_hist[1], false);
+  donut('c_gender2', D.gender[0], D.gender[1]);
+  bar('c_civil', D.civil[0], D.civil[1], true);
+  bar('c_yip', D.yip_hist[0], D.yip_hist[1], false);
+}
+function initPrepost() {
+  donut('c_lado', D.lado[0], D.lado[1]);
+  stacked('c_lado_emp', D.lado_x_emp, true);
+  stacked('c_lado_bank', D.lado_x_bank, true);
+  stacked('c_lado_doc', D.lado_x_doc, true);
+  stacked('c_lado_gad', D.lado_x_gad, true);
+}
+function initCalidad() {
+  const q = D.quality;
+  document.getElementById('q_att').textContent = q.attention_pass + '%';
+  document.getElementById('q_dur').textContent = q.dur_median;
+  document.getElementById('q_spd').textContent = q.speeders;
+  bar('c_durhist', q.dur_hist[0], q.dur_hist[1], false);
+  bar('c_straight', q.straight[0], q.straight[1], false);
+  donut('c_complete', q.complete[0], q.complete[1]);
+  donut('c_version', q.version[0], q.version[1]);
+}
+function initRecon() {
+  const t = D.tracker, el = document.getElementById('recon_body');
+  if(!t) { el.innerHTML = '<p class="note warn">Reconciliación no disponible: falta configurar el acceso a la hoja de Drive (secret <code>GDRIVE_SA_KEY</code>) o compartir la hoja con la cuenta de servicio. El resto del tablero funciona normalmente.</p>'; return; }
+  el.innerHTML =
+    '<div class="kpis">' +
+    '<div class="kpi"><div class="n">'+t.contactados+'</div><div class="l">Contactados</div></div>' +
+    '<div class="kpi"><div class="n">'+t.enviados+'</div><div class="l">Enviados (enlace)</div></div>' +
+    '<div class="kpi"><div class="n">'+t.en_kobo+'</div><div class="l">Encuestas en KOBO</div></div>' +
+    '<div class="kpi"><div class="n">'+t.tasa+'%</div><div class="l">Tasa de respuesta</div></div></div>' +
+    '<div class="grid">' +
+    '<div class="card wide"><h3>Categoría del seguimiento × presencia en KOBO</h3><canvas id="c_rmatrix"></canvas></div>' +
+    '<div class="card wide"><h3>Cobertura por tanda</h3><canvas id="c_rtanda"></canvas></div></div>' +
+    '<p class="note warn">⚠ Marcados "Hizo la encuesta" sin dato en KOBO: <b>'+t.disc_hizo_sin_kobo+'</b> · Con dato en KOBO que el seguimiento no marca: <b>'+t.disc_kobo_no_marcado+'</b> · Respuestas fuera de las tandas trackeadas: <b>'+t.kobo_fuera+'</b>.</p>' +
+    '<p class="note">"Contesto" = contestó el WhatsApp (no necesariamente completó). La verdad de completación es KOBO.</p>' +
+    (t._asof ? '<p class="note">Reconciliación actualizada al '+t._asof+' (se refresca a pedido).</p>' : '');
+  grouped('c_rmatrix', t.matrix.cats, 'Total', t.matrix.n, 'En KOBO', t.matrix.en_kobo);
+  grouped('c_rtanda', t.by_tanda.tandas, 'Enviados', t.by_tanda.enviados, 'En KOBO', t.by_tanda.en_kobo);
+}
+const INIT = { principal:initPrincipal, demografia:initDemo, prepost:initPrepost, calidad:initCalidad, recon:initRecon };
+const done = {};
+function show(tab) {
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('tab-'+tab).classList.add('active');
+  document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on', b.dataset.tab===tab));
+  if(!done[tab]) { done[tab]=1; (INIT[tab]||function(){})(); }
+}
+document.querySelectorAll('#tabs button').forEach(b=>b.addEventListener('click', ()=>show(b.dataset.tab)));
+// KPIs globales
 const days = D.day[0], dc = D.day[1];
 if(days.length) {
   const last7 = dc.slice(-7).reduce((a,b)=>a+b,0);
@@ -167,5 +297,6 @@ if(days.length) {
   const mi = dc.indexOf(Math.max(...dc));
   document.getElementById('kpiday').textContent = days[mi];
 }
+show('principal');
 </script>
 </body></html>
