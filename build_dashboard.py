@@ -254,6 +254,140 @@ def recontact_agg(subs):
     return ['Sí', 'No'], [c.get('1', 0), c.get('2', 0)]
 
 
+# --- Derivadas / demografía / Pre-Post / calidad ---------------------------
+from datetime import date, datetime  # noqa: E402
+
+CUTOFF = date(2018, 10, 31)   # cierre PTP (DS 007-2018-IN)
+TRUST = ['trust_generalized', 'trust_migraciones', 'trust_financial']
+SPEEDER_MIN = 7               # min; < = speeder
+
+
+def _pdate(s):
+    try:
+        return date.fromisoformat(str(s)[:10])
+    except (ValueError, TypeError):
+        return None
+
+
+def _pdt(s):
+    s = str(s or '')
+    for cand in (s.replace('Z', '+00:00'), s[:19]):
+        try:
+            return datetime.fromisoformat(cand)
+        except (ValueError, TypeError):
+            continue
+    return None
+
+
+def age_band(a):
+    if a is None:
+        return None
+    return '18-29' if a <= 29 else ('30-44' if a <= 44 else '45+')
+
+
+def add_derived(rows):
+    """Agrega campos derivados a cada fila: edad, años en Perú, banda de edad,
+    lado del corte (Pre/Post) y banda GAD-7. Todo a partir de datos ya presentes."""
+    today = date.today()
+    for r in rows:
+        bd, ed = _pdate(r.get('birth_date')), _pdate(r.get('entry_date_peru'))
+        r['_age'] = (today - bd).days // 365 if bd else None
+        r['_yip'] = (today - ed).days // 365 if ed else None
+        r['_age_band'] = age_band(r['_age'])
+        r['_lado'] = (('Pre' if ed <= CUTOFF else 'Post') if ed else None)
+        r['_gadband'] = (gad7_band(sum(int(r[f]) for f in GAD7))
+                         if all(str(r.get(f, '')).isdigit() for f in GAD7) else None)
+
+
+def hist(values, edges, labels):
+    """Histograma con bordes fijos: cuenta valores en [edges[i], edges[i+1])."""
+    c = [0] * len(labels)
+    for v in values:
+        if v is None:
+            continue
+        for i in range(len(labels)):
+            lo = edges[i]
+            hi = edges[i + 1] if i + 1 < len(edges) else float('inf')
+            if lo <= v < hi:
+                c[i] += 1
+                break
+    return labels, c
+
+
+def band_counts(rows, field, order):
+    c = Counter(r.get(field) for r in rows if r.get(field))
+    return [b for b in order if c.get(b)], [c[b] for b in order if c.get(b)]
+
+
+# --- Calidad de datos (agregado; espeja 07_Data_Quality/02_qc_report.R) -----
+def duration_minutes(rows):
+    out = []
+    for r in rows:
+        a, b = _pdt(r.get('start')), _pdt(r.get('end'))
+        if a and b:
+            m = (b - a).total_seconds() / 60
+            if 0 <= m < 600:
+                out.append(m)
+    return out
+
+
+def straightline_count(rows, fields):
+    n = 0
+    for r in rows:
+        vals = [r.get(f) for f in fields]
+        if all(str(v).lstrip('-').isdigit() for v in vals) and len(set(vals)) == 1:
+            n += 1
+    return n
+
+
+def version_counts(subs):
+    """Composición por versión del formulario (leído de subs; v3 = trae attention)."""
+    c = Counter()
+    for s in subs:
+        v = s.get('__version__')
+        if v:
+            c[str(v)] += 1
+    cur = None
+    hits = Counter()
+    for s in subs:
+        if str(s.get('attention_check', '')).strip():
+            hits[str(s.get('__version__'))] += 1
+    if hits:
+        cur = hits.most_common(1)[0][0]
+    labels, data = [], []
+    for v, n in c.most_common():
+        labels.append('v3 (vigente)' if v == cur else 'anterior')
+        data.append(n)
+    # colapsar en dos grupos
+    agg2 = Counter()
+    for lab, n in zip(labels, data):
+        agg2[lab] += n
+    order = ['v3 (vigente)', 'anterior']
+    return [o for o in order if agg2.get(o)], [agg2[o] for o in order if agg2.get(o)]
+
+
+def quality_agg(rows, subs):
+    dur = duration_minutes(rows)
+    dur_sorted = sorted(dur)
+    median = round(dur_sorted[len(dur_sorted) // 2], 1) if dur_sorted else 0
+    speeders = sum(1 for d in dur if d < SPEEDER_MIN)
+    reached = sum(1 for r in rows if r.get('knows_cutoff') not in (None, ''))
+    consent_ok = [r for r in rows if str(r.get('consent')) == '1']
+    breakoffs = sum(1 for r in consent_ok if r.get('knows_cutoff') in (None, ''))
+    dur_lbls, dur_cnt = hist(dur, [0, 5, 10, 15, 20, 30, 45, 90],
+                             ['<5', '5-10', '10-15', '15-20', '20-30', '30-45', '45-90', '90+'])
+    return {
+        'attention_pass': pct_value(rows, 'attention_check', '11'),
+        'dur_median': median,
+        'speeders': speeders,
+        'dur_hist': [dur_lbls, dur_cnt],
+        'straight': [['GAD-7 (7 ítems)', 'Confianza (0-10)'],
+                     [straightline_count(rows, GAD7), straightline_count(rows, TRUST)]],
+        'complete': [['Completos', 'Breakoffs'], [reached, breakoffs]],
+        'version': list(version_counts(subs)),
+    }
+
+
 # --- HTML ------------------------------------------------------------------
 def build_html(agg, total, updated, consent_pct, recontact_pct):
     data_json = json.dumps(agg, ensure_ascii=False)
@@ -282,6 +416,15 @@ def build_html(agg, total, updated, consent_pct, recontact_pct):
   .card.wide {{ grid-column:1 / -1; }}
   .card h3 {{ margin:0 0 12px; font-size:14px; font-weight:600; color:var(--ink); }}
   canvas {{ max-height:300px; }}
+  .tabs {{ display:flex; gap:6px; flex-wrap:wrap; margin:18px 0 4px; border-bottom:1px solid #232b34; }}
+  .tabs button {{ background:transparent; border:0; border-bottom:2px solid transparent; color:var(--mut);
+    font:inherit; font-size:14px; padding:10px 14px; cursor:pointer; }}
+  .tabs button:hover {{ color:var(--ink); }}
+  .tabs button.on {{ color:var(--ink); border-bottom-color:var(--ac); font-weight:600; }}
+  .tab {{ display:none; }}
+  .tab.active {{ display:block; }}
+  .note {{ color:var(--mut); font-size:12px; margin:6px 0 0; }}
+  .warn {{ color:#f6919b; }}
   footer {{ color:var(--mut); font-size:12px; padding:18px 28px; border-top:1px solid #232b34; }}
 </style></head>
 <body>
@@ -299,6 +442,15 @@ def build_html(agg, total, updated, consent_pct, recontact_pct):
     <div class="kpi"><div class="n">{recontact_pct}%</div><div class="l">Acepta recontacto</div></div>
   </div>
 
+  <nav class="tabs" id="tabs">
+    <button class="on" data-tab="principal">Principal</button>
+    <button data-tab="demografia">Demografía</button>
+    <button data-tab="prepost">Pre/Post del corte</button>
+    <button data-tab="calidad">Calidad de datos</button>
+    <button data-tab="recon">Enviados vs Respuesta</button>
+  </nav>
+
+  <div class="tab active" id="tab-principal">
   <div class="section"><h2>Seguimiento de campo</h2>
     <div class="d">Ritmo de respuestas y disposición de los participantes.</div></div>
   <div class="grid">
@@ -345,8 +497,58 @@ def build_html(agg, total, updated, consent_pct, recontact_pct):
     <div class="card"><h3>¿Está empleado/a?</h3><canvas id="c_emp"></canvas></div>
     <div class="card"><h3>¿Tiene cuenta de ahorros?</h3><canvas id="c_bank"></canvas></div>
   </div>
+  </div><!-- /tab-principal -->
+
+  <div class="tab" id="tab-demografia">
+  <div class="section"><h2>Demografía</h2>
+    <div class="d">Perfil de quienes respondieron.</div></div>
+  <div class="grid">
+    <div class="card"><h3>Edad (grupos)</h3><canvas id="c_ageband"></canvas></div>
+    <div class="card"><h3>Edad (distribución)</h3><canvas id="c_agehist"></canvas></div>
+    <div class="card"><h3>Género</h3><canvas id="c_gender2"></canvas></div>
+    <div class="card"><h3>Estado civil</h3><canvas id="c_civil"></canvas></div>
+    <div class="card"><h3>Años en Perú</h3><canvas id="c_yip"></canvas></div>
+  </div>
+  <p class="note">La edad se deriva de la fecha de nacimiento (disponible en la versión vigente del formulario).</p>
+  </div><!-- /tab-demografia -->
+
+  <div class="tab" id="tab-prepost">
+  <div class="section"><h2>Pre / Post del cierre del PTP</h2>
+    <div class="d">Indicadores según el lado del corte (31-oct-2018), la variable de asignación del diseño RDD. % por lado.</div></div>
+  <div class="grid">
+    <div class="card"><h3>Respuestas por lado</h3><canvas id="c_lado"></canvas></div>
+    <div class="card"><h3>Empleo por lado (%)</h3><canvas id="c_lado_emp"></canvas></div>
+    <div class="card"><h3>Cuenta bancaria por lado (%)</h3><canvas id="c_lado_bank"></canvas></div>
+    <div class="card wide"><h3>Documento actual por lado (%)</h3><canvas id="c_lado_doc"></canvas></div>
+    <div class="card wide"><h3>Severidad GAD-7 por lado (%)</h3><canvas id="c_lado_gad"></canvas></div>
+  </div>
+  <p class="note">Lado derivado de la fecha de ingreso reportada; exploratorio (aún no es el estimador RDD).</p>
+  </div><!-- /tab-prepost -->
+
+  <div class="tab" id="tab-calidad">
+  <div class="section"><h2>Calidad de datos</h2>
+    <div class="d">Señales de calidad del trabajo de campo (agregado).</div></div>
+  <div class="kpis">
+    <div class="kpi"><div class="n" id="q_att">—</div><div class="l">Attention-check aprobado</div></div>
+    <div class="kpi"><div class="n" id="q_dur">—</div><div class="l">Duración mediana (min)</div></div>
+    <div class="kpi"><div class="n" id="q_spd">—</div><div class="l">Speeders (&lt;7 min)</div></div>
+  </div>
+  <div class="grid">
+    <div class="card"><h3>Duración de la encuesta (min)</h3><canvas id="c_durhist"></canvas></div>
+    <div class="card"><h3>Straightlining (respuestas idénticas)</h3><canvas id="c_straight"></canvas></div>
+    <div class="card"><h3>Completos vs breakoffs</h3><canvas id="c_complete"></canvas></div>
+    <div class="card"><h3>Versión del formulario</h3><canvas id="c_version"></canvas></div>
+  </div>
+  <p class="note">El attention-check ("¿10 + 1?") se bloquea en el formulario, así que &gt;0 fallos merece revisión.</p>
+  </div><!-- /tab-calidad -->
+
+  <div class="tab" id="tab-recon">
+  <div class="section"><h2>Enviados vs Respuesta</h2>
+    <div class="d">Cobertura de campo: personas contactadas (hoja de seguimiento) vs. encuestas realmente recibidas en KOBO. Solo conteos agregados — sin nombres ni teléfonos.</div></div>
+  <div id="recon_body"></div>
+  </div><!-- /tab-recon -->
 </div>
-<footer>Fuente: KoboToolbox · Generado automáticamente · Solo agregados — ninguna respuesta individual es identificable.</footer>
+<footer>Fuente: KoboToolbox + seguimiento de campo · Generado automáticamente · Solo agregados — ninguna respuesta individual es identificable.</footer>
 <script>
 const D = {data_json};
 const AC = '#4a86e8', GRID = '#232b34', INK = '#8b98a5';
@@ -390,34 +592,96 @@ function stacked(id, ct, asPct) {{
           ticks:{{ callback:v=>asPct?v+'%':v }} }},
         y:{{ stacked:true, grid:{{color:GRID}} }} }} }} }});
 }}
-dayChart('c_day', D.day[0], D.day[1], D.cum);
-donut('c_gender', D.gender[0], D.gender[1]);
-bar('c_depto', D.depto[0], D.depto[1], true);
-bar('c_distr', D.distr[0], D.distr[1], true);
-donut('c_consent', D.consent[0], D.consent[1]);
-donut('c_recon', D.recontact[0], D.recontact[1]);
-bar('c_doc', D.doc[0], D.doc[1], true);
-donut('c_entry', D.entry[0], D.entry[1]);
-stacked('c_docemp', D.doc_x_emp, true);
-stacked('c_docbank', D.doc_x_bank, true);
-stacked('c_docedu', D.doc_x_edu, true);
-bar('c_edu', D.edu[0], D.edu[1], true);
-bar('c_aware', D.aware[0], D.aware[1], true);
-bar('c_cutoff', D.cutoff[0], D.cutoff[1], true);
-donut('c_applied', D.applied[0], D.applied[1]);
-donut('c_protout', D.protout[0], D.protout[1]);
-bar('c_gad', D.gad[0], D.gad[1], false);
-bar('c_gadsev', D.gadsev[0], D.gadsev[1], false);
-bar('c_phq', D.phq[0], D.phq[1], false);
-stacked('c_gaddoc', D.gad_x_doc, true);
-bar('c_income', D.income[0], D.income[1], true);
-donut('c_food', D.food[0], D.food[1]);
-donut('c_frag', D.frag[0], D.frag[1]);
-bar('c_discrim', D.discrim[0], D.discrim[1], true);
-bar('c_stay', D.stay[0], D.stay[1], true);
-donut('c_emp', D.emp[0], D.emp[1]);
-donut('c_bank', D.bank[0], D.bank[1]);
-// KPIs derivados
+function grouped(id, cats, n1, d1, n2, d2) {{
+  if(!cats || !cats.length) return;
+  new Chart(document.getElementById(id), {{ type:'bar',
+    data:{{ labels:cats, datasets:[
+      {{ label:n1, data:d1, backgroundColor:'#4a86e8' }},
+      {{ label:n2, data:d2, backgroundColor:'#43d692' }} ]}},
+    options:{{ indexAxis:'y', plugins:{{legend:{{position:'bottom'}}}},
+      scales:{{ x:{{grid:{{color:GRID}}}}, y:{{grid:{{color:GRID}}}} }} }} }});
+}}
+function initPrincipal() {{
+  dayChart('c_day', D.day[0], D.day[1], D.cum);
+  donut('c_gender', D.gender[0], D.gender[1]);
+  bar('c_depto', D.depto[0], D.depto[1], true);
+  bar('c_distr', D.distr[0], D.distr[1], true);
+  donut('c_consent', D.consent[0], D.consent[1]);
+  donut('c_recon', D.recontact[0], D.recontact[1]);
+  bar('c_doc', D.doc[0], D.doc[1], true);
+  donut('c_entry', D.entry[0], D.entry[1]);
+  stacked('c_docemp', D.doc_x_emp, true);
+  stacked('c_docbank', D.doc_x_bank, true);
+  stacked('c_docedu', D.doc_x_edu, true);
+  bar('c_edu', D.edu[0], D.edu[1], true);
+  bar('c_aware', D.aware[0], D.aware[1], true);
+  bar('c_cutoff', D.cutoff[0], D.cutoff[1], true);
+  donut('c_applied', D.applied[0], D.applied[1]);
+  donut('c_protout', D.protout[0], D.protout[1]);
+  bar('c_gad', D.gad[0], D.gad[1], false);
+  bar('c_gadsev', D.gadsev[0], D.gadsev[1], false);
+  bar('c_phq', D.phq[0], D.phq[1], false);
+  stacked('c_gaddoc', D.gad_x_doc, true);
+  bar('c_income', D.income[0], D.income[1], true);
+  donut('c_food', D.food[0], D.food[1]);
+  donut('c_frag', D.frag[0], D.frag[1]);
+  bar('c_discrim', D.discrim[0], D.discrim[1], true);
+  bar('c_stay', D.stay[0], D.stay[1], true);
+  donut('c_emp', D.emp[0], D.emp[1]);
+  donut('c_bank', D.bank[0], D.bank[1]);
+}}
+function initDemo() {{
+  donut('c_ageband', D.age_band[0], D.age_band[1]);
+  bar('c_agehist', D.age_hist[0], D.age_hist[1], false);
+  donut('c_gender2', D.gender[0], D.gender[1]);
+  bar('c_civil', D.civil[0], D.civil[1], true);
+  bar('c_yip', D.yip_hist[0], D.yip_hist[1], false);
+}}
+function initPrepost() {{
+  donut('c_lado', D.lado[0], D.lado[1]);
+  stacked('c_lado_emp', D.lado_x_emp, true);
+  stacked('c_lado_bank', D.lado_x_bank, true);
+  stacked('c_lado_doc', D.lado_x_doc, true);
+  stacked('c_lado_gad', D.lado_x_gad, true);
+}}
+function initCalidad() {{
+  const q = D.quality;
+  document.getElementById('q_att').textContent = q.attention_pass + '%';
+  document.getElementById('q_dur').textContent = q.dur_median;
+  document.getElementById('q_spd').textContent = q.speeders;
+  bar('c_durhist', q.dur_hist[0], q.dur_hist[1], false);
+  bar('c_straight', q.straight[0], q.straight[1], false);
+  donut('c_complete', q.complete[0], q.complete[1]);
+  donut('c_version', q.version[0], q.version[1]);
+}}
+function initRecon() {{
+  const t = D.tracker, el = document.getElementById('recon_body');
+  if(!t) {{ el.innerHTML = '<p class="note warn">Reconciliación no disponible: falta configurar el acceso a la hoja de Drive (secret <code>GDRIVE_SA_KEY</code>) o compartir la hoja con la cuenta de servicio. El resto del tablero funciona normalmente.</p>'; return; }}
+  el.innerHTML =
+    '<div class="kpis">' +
+    '<div class="kpi"><div class="n">'+t.contactados+'</div><div class="l">Contactados</div></div>' +
+    '<div class="kpi"><div class="n">'+t.enviados+'</div><div class="l">Enviados (enlace)</div></div>' +
+    '<div class="kpi"><div class="n">'+t.en_kobo+'</div><div class="l">Encuestas en KOBO</div></div>' +
+    '<div class="kpi"><div class="n">'+t.tasa+'%</div><div class="l">Tasa de respuesta</div></div></div>' +
+    '<div class="grid">' +
+    '<div class="card wide"><h3>Categoría del seguimiento × presencia en KOBO</h3><canvas id="c_rmatrix"></canvas></div>' +
+    '<div class="card wide"><h3>Cobertura por tanda</h3><canvas id="c_rtanda"></canvas></div></div>' +
+    '<p class="note warn">⚠ Marcados "Hizo la encuesta" sin dato en KOBO: <b>'+t.disc_hizo_sin_kobo+'</b> · Con dato en KOBO que el seguimiento no marca: <b>'+t.disc_kobo_no_marcado+'</b> · Respuestas fuera de las tandas trackeadas: <b>'+t.kobo_fuera+'</b>.</p>' +
+    '<p class="note">"Contesto" = contestó el WhatsApp (no necesariamente completó). La verdad de completación es KOBO.</p>' +
+    (t._asof ? '<p class="note">Reconciliación actualizada al '+t._asof+' (se refresca a pedido).</p>' : '');
+  grouped('c_rmatrix', t.matrix.cats, 'Total', t.matrix.n, 'En KOBO', t.matrix.en_kobo);
+  grouped('c_rtanda', t.by_tanda.tandas, 'Enviados', t.by_tanda.enviados, 'En KOBO', t.by_tanda.en_kobo);
+}}
+const INIT = {{ principal:initPrincipal, demografia:initDemo, prepost:initPrepost, calidad:initCalidad, recon:initRecon }};
+const done = {{}};
+function show(tab) {{
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('tab-'+tab).classList.add('active');
+  document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on', b.dataset.tab===tab));
+  if(!done[tab]) {{ done[tab]=1; (INIT[tab]||function(){{}})(); }}
+}}
+document.querySelectorAll('#tabs button').forEach(b=>b.addEventListener('click', ()=>show(b.dataset.tab)));
+// KPIs globales
 const days = D.day[0], dc = D.day[1];
 if(days.length) {{
   const last7 = dc.slice(-7).reduce((a,b)=>a+b,0);
@@ -426,6 +690,7 @@ if(days.length) {{
   const mi = dc.indexOf(Math.max(...dc));
   document.getElementById('kpiday').textContent = days[mi];
 }}
+show('principal');
 </script>
 </body></html>"""
 
@@ -436,11 +701,61 @@ def main():
         sys.exit('ERROR: falta la variable de entorno KOBO_TOKEN.')
     subs = fetch_all(token)
     rows = to_leaf_rows(subs)
+    add_derived(rows)
     total = len(rows)
 
+    # Nombres de los respondientes (PII) — SOLO para cruzar con el tracker en
+    # memoria; nunca se emiten. Se leen de las subs crudas (fuera de `rows`).
+    def _fullname(s):
+        fn = ln = ''
+        for k, v in s.items():
+            lf = leaf(k)
+            if lf == 'respondent_first_name' and v:
+                fn = str(v)
+            elif lf == 'respondent_last_name' and v:
+                ln = str(v)
+        return (fn + ' ' + ln).strip()
+    kobo_names = [n for n in (_fullname(s) for s in subs) if n]
+
+    # Reconciliación anonimizada. Dos caminos (solo conteos, nunca PII):
+    #  1) EN VIVO con cuenta de servicio (si existe el secret GDRIVE_SA_KEY).
+    #  2) SNAPSHOT commiteado en el repo (tracker_agg.json), generado on-demand
+    #     con make_tracker_snapshot.py — no requiere setup de Google.
+    tracker_data = None
+    try:
+        import tracker
+        tracker_data = tracker.tracker_agg(kobo_names)
+    except Exception as e:  # noqa: BLE001 — degradación elegante
+        print(f'[tracker] en vivo omitido: {e}')
+    if not tracker_data:
+        snap = HERE / 'tracker_agg.json'
+        if snap.exists():
+            try:
+                tracker_data = json.loads(snap.read_text(encoding='utf-8'))
+                print(f"[tracker] usando snapshot ({tracker_data.get('_asof', 's/f')})")
+            except Exception as e:  # noqa: BLE001
+                print(f'[tracker] snapshot inválido: {e}')
+
+    agg = build_agg(rows, subs, tracker_data)
+    consent_pct = pct_value(rows, 'consent', '1')
+    recon_lbls, recon_vals = agg['recontact']
+    rtot = sum(recon_vals)
+    recontact_pct = round(100 * recon_vals[0] / rtot) if rtot else 0
+
+    updated = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')
+    (HERE / 'index.html').write_text(
+        build_html(agg, total, updated, consent_pct, recontact_pct),
+        encoding='utf-8')
+    print(f'OK — {total} respuestas → index.html ({updated})')
+
+
+def build_agg(rows, subs, tracker_data):
+    """Construye el dict de agregados (sin PII) para el HTML. Testeable sin API."""
     # Órdenes fijos para escalas ordinales / códigos categóricos.
     DOC_ORDER = ['3', '2', '1', '5', '4', '6', '0']   # PTP→CPP→CE→refugio→DNI→vencido→ninguno
     YESNO = ['1', '2']
+    LADO_ORDER = ['Pre', 'Post']
+    CIVIL_ORDER = [str(i) for i in range(1, 7)]
     EDU_ORDER = [str(i) for i in range(8)]            # 0..7
     INCOME_ORDER = ['1', '2', '3', '4']
     AWARE_ORDER = ['1', '2', '3', '88']
@@ -455,7 +770,7 @@ def main():
         run += n
         cum.append(run)
 
-    agg = {
+    return {
         'day':       [days, dcounts],
         'cum':       cum,
         'gender':    list(counts(rows, 'gender')),
@@ -484,17 +799,24 @@ def main():
         'stay':      list(dist(rows, 'intention_stay', STAY_ORDER)),
         'emp':       list(counts(rows, 'employed')),
         'bank':      list(counts(rows, 'has_bank_account')),
+        # --- Demografía ---
+        'age_band':  list(band_counts(rows, '_age_band', ['18-29', '30-44', '45+'])),
+        'age_hist':  list(hist([r['_age'] for r in rows], [18, 25, 35, 45, 55, 65],
+                               ['18-24', '25-34', '35-44', '45-54', '55-64', '65+'])),
+        'civil':     list(dist(rows, 'civil_status', CIVIL_ORDER)),
+        'yip_hist':  list(hist([r['_yip'] for r in rows], [0, 2, 4, 6, 8, 10],
+                               ['0-1', '2-3', '4-5', '6-7', '8-9', '10+'])),
+        # --- Pre/Post del corte PTP (variable de asignación del RDD) ---
+        'lado':      list(band_counts(rows, '_lado', LADO_ORDER)),
+        'lado_x_emp':  crosstab(rows, '_lado', 'employed', LADO_ORDER, YESNO),
+        'lado_x_bank': crosstab(rows, '_lado', 'has_bank_account', LADO_ORDER, YESNO),
+        'lado_x_doc':  crosstab(rows, '_lado', 'main_current_doc_pe', LADO_ORDER, DOC_ORDER),
+        'lado_x_gad':  crosstab(rows, '_lado', '_gadband', LADO_ORDER, SEV_BANDS),
+        # --- Calidad de datos ---
+        'quality':   quality_agg(rows, subs),
+        # --- Reconciliación anonimizada (o None) ---
+        'tracker':   tracker_data,
     }
-    consent_pct = pct_value(rows, 'consent', '1')
-    recon_lbls, recon_vals = agg['recontact']
-    rtot = sum(recon_vals)
-    recontact_pct = round(100 * recon_vals[0] / rtot) if rtot else 0
-
-    updated = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')
-    (HERE / 'index.html').write_text(
-        build_html(agg, total, updated, consent_pct, recontact_pct),
-        encoding='utf-8')
-    print(f'OK — {total} respuestas → index.html ({updated})')
 
 
 if __name__ == '__main__':

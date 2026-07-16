@@ -1,0 +1,55 @@
+{
+ "contactados": 485,
+ "enviados": 444,
+ "hizo": 8,
+ "contesto": 14,
+ "en_kobo": 29,
+ "en_kobo_env": 29,
+ "tasa": 6.5,
+ "matrix": {
+  "cats": [
+   "hizo la encuesta (equipo)",
+   "contesto/comprometido",
+   "enviada sin respuesta",
+   "numero muerto",
+   "rechazo"
+  ],
+  "n": [
+   8,
+   14,
+   422,
+   39,
+   2
+  ],
+  "en_kobo": [
+   6,
+   0,
+   23,
+   0,
+   0
+  ]
+ },
+ "by_tanda": {
+  "tandas": [
+   "Muestra 1",
+   "Muestra 2"
+  ],
+  "contactados": [
+   149,
+   336
+  ],
+  "enviados": [
+   120,
+   324
+  ],
+  "en_kobo": [
+   1,
+   28
+  ]
+ },
+ "disc_hizo_sin_kobo": 2,
+ "disc_kobo_no_marcado": 25,
+ "kobo_fuera": 24,
+ "_asof": "2026-07-16",
+ "_kobo_n": 55
+}

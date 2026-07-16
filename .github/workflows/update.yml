@@ -1,9 +1,10 @@
 name: Actualizar dashboard
 
-# Regenera index.html desde la API de Kobo cada 30 min y publica vía GitHub Pages.
+# Regenera index.html desde la API de Kobo + la hoja de seguimiento (Drive) cada
+# 15 min y publica vía GitHub Pages.
 on:
   schedule:
-    - cron: '13,43 * * * *'   # cada 30 min (minutos 13 y 43 para no saturar :00)
+    - cron: '*/15 * * * *'    # cada 15 min
   workflow_dispatch:          # botón manual "Run workflow"
   push:
     branches: [ main ]
@@ -21,9 +22,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Dependencias (lectura de la hoja de Drive con cuenta de servicio)
+        run: pip install --quiet google-auth requests openpyxl
+
       - name: Generar dashboard
         env:
           KOBO_TOKEN: ${{ secrets.KOBO_TOKEN }}
+          GDRIVE_SA_KEY: ${{ secrets.GDRIVE_SA_KEY }}   # llave JSON de la cuenta de servicio
         run: python3 build_dashboard.py
 
       - name: Commitear si cambió
