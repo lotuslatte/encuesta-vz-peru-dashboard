@@ -1,11 +1,11 @@
 {
- "contactados": 485,
- "enviados": 444,
+ "contactados": 491,
+ "enviados": 450,
  "hizo": 8,
- "contesto": 14,
+ "contesto": 15,
  "en_kobo": 29,
  "en_kobo_env": 29,
- "tasa": 6.5,
+ "tasa": 6.4,
  "matrix": {
   "cats": [
    "hizo la encuesta (equipo)",
@@ -16,8 +16,8 @@
   ],
   "n": [
    8,
-   14,
-   422,
+   15,
+   427,
    39,
    2
   ],
@@ -31,18 +31,22 @@
  },
  "by_tanda": {
   "tandas": [
+   "María_Muestra 4",
    "Muestra 1",
    "Muestra 2"
   ],
   "contactados": [
+   6,
    149,
    336
   ],
   "enviados": [
+   6,
    120,
    324
   ],
   "en_kobo": [
+   0,
    1,
    28
   ]
@@ -50,6 +54,6 @@
  "disc_hizo_sin_kobo": 2,
  "disc_kobo_no_marcado": 25,
  "kobo_fuera": 24,
- "_asof": "2026-07-16",
+ "_asof": "2026-07-17",
  "_kobo_n": 55
 }

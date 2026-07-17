@@ -44,6 +44,30 @@ def latest_kobo_export():
     return xs[-1]
 
 
+def kobo_names_api():
+    """Nombres de los respondientes desde la API de KOBO (si hay KOBO_TOKEN).
+    Se usan SOLO para el matching; nunca se escriben. Devuelve None si no hay token."""
+    import os
+    token = os.environ.get('KOBO_TOKEN')
+    if not token:
+        return None
+    import build_dashboard as bd
+    subs = bd.fetch_all(token)
+    out = []
+    for s in subs:
+        fn = ln = ''
+        for k, v in s.items():
+            lf = bd.leaf(k)
+            if lf == 'respondent_first_name' and v:
+                fn = str(v)
+            elif lf == 'respondent_last_name' and v:
+                ln = str(v)
+        nm = (fn + ' ' + ln).strip()
+        if nm:
+            out.append(nm)
+    return out
+
+
 def kobo_names(path):
     wb = openpyxl.load_workbook(path, read_only=True)
     ws = wb[wb.sheetnames[0]]
@@ -71,7 +95,13 @@ def main():
         sys.exit(f'No encuentro la hoja de seguimiento: {tracker_xlsx}')
 
     rows = tracker.parse_tracker(open(tracker_xlsx, 'rb').read())
-    names = kobo_names(kobo_xlsx)
+    # Nombres de KOBO: preferir la API en vivo (KOBO_TOKEN); si no, el último export.
+    names = kobo_names_api()
+    src = 'API en vivo'
+    if not names:
+        names = kobo_names(kobo_xlsx)
+        src = f'export {Path(kobo_xlsx).name}'
+    print(f'KOBO: {len(names)} nombres ({src})')
     agg = tracker.reconcile(rows, names)
     agg['_asof'] = date.today().isoformat()
     agg['_kobo_n'] = len(names)
