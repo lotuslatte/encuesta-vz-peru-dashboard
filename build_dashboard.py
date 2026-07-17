@@ -263,6 +263,23 @@ CUTOFF = date(2018, 10, 31)   # cierre PTP (DS 007-2018-IN)
 TRUST = ['trust_generalized', 'trust_migraciones', 'trust_financial']
 SPEEDER_MIN = 7               # min; < = speeder
 
+# Bandas del diseño RDD: bloques de 3 meses alrededor del corte (Inner ±3m,
+# Outer 3-6m, Buffer 6-9m). Frame ±9m (2018-02-01 → 2019-07-31).
+BANDS = [
+    ('Inner',  'Pre',  date(2018, 8, 1),  date(2018, 10, 31)),
+    ('Inner',  'Post', date(2018, 11, 1), date(2019, 1, 31)),
+    ('Outer',  'Pre',  date(2018, 5, 1),  date(2018, 7, 31)),
+    ('Outer',  'Post', date(2019, 2, 1),  date(2019, 4, 30)),
+    ('Buffer', 'Pre',  date(2018, 2, 1),  date(2018, 4, 30)),
+    ('Buffer', 'Post', date(2019, 5, 1),  date(2019, 7, 31)),
+]
+CELLS = [('Inner', 'Pre'), ('Inner', 'Post'), ('Outer', 'Pre'),
+         ('Outer', 'Post'), ('Buffer', 'Pre'), ('Buffer', 'Post')]
+# Metas de completas por celda (control_cuotas.xlsx, Tanda2 = 2000 total).
+QUOTAS = {('Inner', 'Pre'): 500, ('Inner', 'Post'): 500,
+          ('Outer', 'Pre'): 250, ('Outer', 'Post'): 250,
+          ('Buffer', 'Pre'): 250, ('Buffer', 'Post'): 250}
+
 
 def _pdate(s):
     try:
@@ -297,6 +314,15 @@ def add_derived(rows):
         r['_yip'] = (today - ed).days // 365 if ed else None
         r['_age_band'] = age_band(r['_age'])
         r['_lado'] = (('Pre' if ed <= CUTOFF else 'Post') if ed else None)
+        # banda del diseño RDD + celda (banda × lado); None si fuera del marco ±9m
+        band = None
+        if ed:
+            for (b, l, d0, d1) in BANDS:
+                if d0 <= ed <= d1:
+                    band, r['_lado'] = b, l
+                    break
+        r['_band'] = band
+        r['_cell'] = (f'{band} {r["_lado"]}' if band else None)
         r['_gadband'] = (gad7_band(sum(int(r[f]) for f in GAD7))
                          if all(str(r.get(f, '')).isdigit() for f in GAD7) else None)
 
@@ -390,6 +416,37 @@ def quality_agg(rows, subs):
     }
 
 
+# --- Cobertura de muestreo por banda × lado (vs cuota) ----------------------
+def coverage_agg(rows):
+    """Reporte de muestreo por los cortes del bandwidth (bandas del RDD).
+    Completas por celda (banda × lado) vs meta de cuota + fuera de marco."""
+    ach = Counter()
+    outframe = 0
+    inframe = 0
+    for r in rows:
+        ed = _pdate(r.get('entry_date_peru'))
+        if not ed:
+            continue
+        if r.get('_band'):
+            ach[(r['_band'], r['_lado'])] += 1
+            inframe += 1
+        else:
+            outframe += 1
+    labels = [f'{b} {l}' for (b, l) in CELLS]
+    achieved = [ach[(b, l)] for (b, l) in CELLS]
+    quota = [QUOTAS[(b, l)] for (b, l) in CELLS]
+    pct = [round(100 * a / q, 1) if q else 0 for a, q in zip(achieved, quota)]
+    pre = sum(a for (b, l), a in zip(CELLS, achieved) if l == 'Pre')
+    inner = sum(a for (b, l), a in zip(CELLS, achieved) if b == 'Inner')
+    return {
+        'labels': labels, 'achieved': achieved, 'quota': quota, 'pct': pct,
+        'outframe': outframe, 'inframe': inframe,
+        'total_quota': sum(QUOTAS.values()),
+        'pre_pct': round(100 * pre / inframe, 0) if inframe else 0,
+        'inner_pct': round(100 * inner / inframe, 0) if inframe else 0,
+    }
+
+
 # --- HTML ------------------------------------------------------------------
 def build_html(agg, total, updated, consent_pct, recontact_pct):
     data_json = json.dumps(agg, ensure_ascii=False)
@@ -447,7 +504,7 @@ def build_html(agg, total, updated, consent_pct, recontact_pct):
   <nav class="tabs" id="tabs">
     <button class="on" data-tab="principal">Principal</button>
     <button data-tab="demografia">Demografía</button>
-    <button data-tab="prepost">Pre/Post del corte</button>
+    <button data-tab="prepost">Muestreo / Cobertura</button>
     <button data-tab="calidad">Calidad de datos</button>
     <button data-tab="recon">Enviados vs Respuesta</button>
   </nav>
@@ -515,16 +572,20 @@ def build_html(agg, total, updated, consent_pct, recontact_pct):
   </div><!-- /tab-demografia -->
 
   <div class="tab" id="tab-prepost">
-  <div class="section"><h2>Pre / Post del cierre del PTP</h2>
-    <div class="d">Indicadores según el lado del corte (31-oct-2018), la variable de asignación del diseño RDD. % por lado.</div></div>
-  <div class="grid">
-    <div class="card"><h3>Respuestas por lado</h3><canvas id="c_lado"></canvas></div>
-    <div class="card"><h3>Empleo por lado (%)</h3><canvas id="c_lado_emp"></canvas></div>
-    <div class="card"><h3>Cuenta bancaria por lado (%)</h3><canvas id="c_lado_bank"></canvas></div>
-    <div class="card wide"><h3>Documento actual por lado (%)</h3><canvas id="c_lado_doc"></canvas></div>
-    <div class="card wide"><h3>Severidad GAD-7 por lado (%)</h3><canvas id="c_lado_gad"></canvas></div>
+  <div class="section"><h2>Muestreo / Cobertura por banda</h2>
+    <div class="d">Avance de la muestra por celda del diseño (banda × lado del corte, 31-oct-2018) vs. la cuota. Para vigilar cobertura e imbalance — no son indicadores de resultado.</div></div>
+  <div class="kpis">
+    <div class="kpi"><div class="n" id="cov_frame">—</div><div class="l">Completas en marco (±9m)</div></div>
+    <div class="kpi"><div class="n" id="cov_pre">—</div><div class="l">% Pre (meta 50%)</div></div>
+    <div class="kpi"><div class="n" id="cov_inner">—</div><div class="l">% cerca/Inner (meta 50%)</div></div>
+    <div class="kpi"><div class="n" id="cov_out">—</div><div class="l">Fuera de marco (&gt;9m)</div></div>
   </div>
-  <p class="note">Lado derivado de la fecha de ingreso reportada; exploratorio (aún no es el estimador RDD).</p>
+  <div class="grid">
+    <div class="card wide"><h3>Completas por celda (banda × lado)</h3><canvas id="c_cov"></canvas></div>
+    <div class="card wide"><h3>Avance hacia la cuota (%)</h3><canvas id="c_covpct"></canvas></div>
+    <div class="card wide"><h3>Balance de género por celda (%)</h3><canvas id="c_cellgender"></canvas></div>
+  </div>
+  <p class="note">Banda derivada de la fecha de ingreso reportada. Cuotas (Tanda2, 2000 total): Inner 500/lado · Outer y Buffer 250/lado.</p>
   </div><!-- /tab-prepost -->
 
   <div class="tab" id="tab-calidad">
@@ -640,11 +701,14 @@ function initDemo() {{
   bar('c_yip', D.yip_hist[0], D.yip_hist[1], false);
 }}
 function initPrepost() {{
-  donut('c_lado', D.lado[0], D.lado[1]);
-  stacked('c_lado_emp', D.lado_x_emp, true);
-  stacked('c_lado_bank', D.lado_x_bank, true);
-  stacked('c_lado_doc', D.lado_x_doc, true);
-  stacked('c_lado_gad', D.lado_x_gad, true);
+  const cov = D.coverage;
+  document.getElementById('cov_frame').textContent = cov.inframe;
+  document.getElementById('cov_pre').textContent = cov.pre_pct + '%';
+  document.getElementById('cov_inner').textContent = cov.inner_pct + '%';
+  document.getElementById('cov_out').textContent = cov.outframe;
+  bar('c_cov', cov.labels, cov.achieved, true);
+  bar('c_covpct', cov.labels, cov.pct, true);
+  stacked('c_cellgender', D.cell_x_gender, true);
 }}
 function initCalidad() {{
   const q = D.quality;
@@ -808,12 +872,11 @@ def build_agg(rows, subs, tracker_data):
         'civil':     list(dist(rows, 'civil_status', CIVIL_ORDER)),
         'yip_hist':  list(hist([r['_yip'] for r in rows], [0, 2, 4, 6, 8, 10],
                                ['0-1', '2-3', '4-5', '6-7', '8-9', '10+'])),
-        # --- Pre/Post del corte PTP (variable de asignación del RDD) ---
+        # --- Muestreo / cobertura por banda × lado (cuotas del RDD) ---
         'lado':      list(band_counts(rows, '_lado', LADO_ORDER)),
-        'lado_x_emp':  crosstab(rows, '_lado', 'employed', LADO_ORDER, YESNO),
-        'lado_x_bank': crosstab(rows, '_lado', 'has_bank_account', LADO_ORDER, YESNO),
-        'lado_x_doc':  crosstab(rows, '_lado', 'main_current_doc_pe', LADO_ORDER, DOC_ORDER),
-        'lado_x_gad':  crosstab(rows, '_lado', '_gadband', LADO_ORDER, SEV_BANDS),
+        'coverage':  coverage_agg(rows),
+        'cell_x_gender': crosstab(rows, '_cell', 'gender',
+                                  [f'{b} {l}' for (b, l) in CELLS], ['1', '2', '3']),
         # --- Calidad de datos ---
         'quality':   quality_agg(rows, subs),
         # --- Reconciliación anonimizada (o None) ---
