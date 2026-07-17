@@ -275,6 +275,15 @@ BANDS = [
 ]
 CELLS = [('Inner', 'Pre'), ('Inner', 'Post'), ('Outer', 'Pre'),
          ('Outer', 'Post'), ('Buffer', 'Pre'), ('Buffer', 'Post')]
+# Orden CRONOLÓGICO (lejos-antes → corte → lejos-después) para visualizar el bandwidth,
+# con el nombre de los meses de cada bloque.
+CELLS_CHRONO = [('Buffer', 'Pre'), ('Outer', 'Pre'), ('Inner', 'Pre'),
+                ('Inner', 'Post'), ('Outer', 'Post'), ('Buffer', 'Post')]
+CELL_CAL = {
+    ('Buffer', 'Pre'):  "feb–abr '18",  ('Outer', 'Pre'):  "may–jul '18",
+    ('Inner', 'Pre'):   "ago–oct '18",  ('Inner', 'Post'): "nov '18–ene '19",
+    ('Outer', 'Post'):  "feb–abr '19",  ('Buffer', 'Post'): "may–jul '19",
+}
 # Metas de completas por celda (control_cuotas.xlsx, Tanda2 = 2000 total).
 QUOTAS = {('Inner', 'Pre'): 500, ('Inner', 'Post'): 500,
           ('Outer', 'Pre'): 250, ('Outer', 'Post'): 250,
@@ -432,12 +441,13 @@ def coverage_agg(rows):
             inframe += 1
         else:
             outframe += 1
-    labels = [f'{b} {l}' for (b, l) in CELLS]
-    achieved = [ach[(b, l)] for (b, l) in CELLS]
-    quota = [QUOTAS[(b, l)] for (b, l) in CELLS]
+    # Etiquetas multilínea: [banda+lado, meses] y en orden cronológico.
+    labels = [[f'{b} {l}', CELL_CAL[(b, l)]] for (b, l) in CELLS_CHRONO]
+    achieved = [ach[(b, l)] for (b, l) in CELLS_CHRONO]
+    quota = [QUOTAS[(b, l)] for (b, l) in CELLS_CHRONO]
     pct = [round(100 * a / q, 1) if q else 0 for a, q in zip(achieved, quota)]
-    pre = sum(a for (b, l), a in zip(CELLS, achieved) if l == 'Pre')
-    inner = sum(a for (b, l), a in zip(CELLS, achieved) if b == 'Inner')
+    pre = sum(a for (b, l), a in zip(CELLS_CHRONO, achieved) if l == 'Pre')
+    inner = sum(a for (b, l), a in zip(CELLS_CHRONO, achieved) if b == 'Inner')
     return {
         'labels': labels, 'achieved': achieved, 'quota': quota, 'pct': pct,
         'outframe': outframe, 'inframe': inframe,
@@ -655,6 +665,17 @@ function stacked(id, ct, asPct) {{
           ticks:{{ callback:v=>asPct?v+'%':v }} }},
         y:{{ stacked:true, grid:{{color:GRID}} }} }} }} }});
 }}
+function stackedV(id, ct, asPct) {{
+  if(!ct || !ct.cats.length) return;
+  new Chart(document.getElementById(id), {{ type:'bar',
+    data:{{ labels:ct.cats, datasets:ct.series.map((s,i)=>(
+      {{ label:s.name, data:s.data, backgroundColor:PAL[i%PAL.length] }})) }},
+    options:{{ plugins:{{ legend:{{position:'bottom'}},
+        tooltip:{{ callbacks:{{ label:c=>` ${{c.dataset.label}}: ${{c.parsed.y}}${{asPct?'%':''}}` }} }} }},
+      scales:{{ x:{{ stacked:true, grid:{{color:GRID}} }},
+        y:{{ stacked:true, grid:{{color:GRID}}, max:asPct?100:undefined,
+          ticks:{{ callback:v=>asPct?v+'%':v }} }} }} }} }});
+}}
 function grouped(id, cats, n1, d1, n2, d2) {{
   if(!cats || !cats.length) return;
   new Chart(document.getElementById(id), {{ type:'bar',
@@ -706,9 +727,9 @@ function initPrepost() {{
   document.getElementById('cov_pre').textContent = cov.pre_pct + '%';
   document.getElementById('cov_inner').textContent = cov.inner_pct + '%';
   document.getElementById('cov_out').textContent = cov.outframe;
-  bar('c_cov', cov.labels, cov.achieved, true);
-  bar('c_covpct', cov.labels, cov.pct, true);
-  stacked('c_cellgender', D.cell_x_gender, true);
+  bar('c_cov', cov.labels, cov.achieved, false);
+  bar('c_covpct', cov.labels, cov.pct, false);
+  stackedV('c_cellgender', D.cell_x_gender, true);
 }}
 function initCalidad() {{
   const q = D.quality;
@@ -876,7 +897,7 @@ def build_agg(rows, subs, tracker_data):
         'lado':      list(band_counts(rows, '_lado', LADO_ORDER)),
         'coverage':  coverage_agg(rows),
         'cell_x_gender': crosstab(rows, '_cell', 'gender',
-                                  [f'{b} {l}' for (b, l) in CELLS], ['1', '2', '3']),
+                                  [f'{b} {l}' for (b, l) in CELLS_CHRONO], ['1', '2', '3']),
         # --- Calidad de datos ---
         'quality':   quality_agg(rows, subs),
         # --- Reconciliación anonimizada (o None) ---
