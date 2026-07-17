@@ -14,8 +14,10 @@ import os
 import sys
 import urllib.request
 from collections import Counter, defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
+
+PERU_TZ = timezone(timedelta(hours=-5))   # America/Lima (sin horario de verano)
 
 KOBO_DOMAIN = 'kf.kobotoolbox.org'
 ASSET_UID = 'abz52mVkVXjhDRkSkj4fHJ'
@@ -742,7 +744,7 @@ def main():
     rtot = sum(recon_vals)
     recontact_pct = round(100 * recon_vals[0] / rtot) if rtot else 0
 
-    updated = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')
+    updated = datetime.now(PERU_TZ).strftime('%Y-%m-%d %H:%M') + ' (hora Perú)'
     (HERE / 'index.html').write_text(
         build_html(agg, total, updated, consent_pct, recontact_pct),
         encoding='utf-8')
