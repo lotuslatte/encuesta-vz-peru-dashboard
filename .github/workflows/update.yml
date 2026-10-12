@@ -1,0 +1,44 @@
+name: Actualizar dashboard
+
+# Regenera index.html desde la API de Kobo + la hoja de seguimiento (Drive) cada
+# 15 min y publica vía GitHub Pages.
+on:
+  schedule:
+    - cron: '*/15 * * * *'    # cada 15 min
+  workflow_dispatch:          # botón manual "Run workflow"
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: write             # para commitear el index.html regenerado
+
+concurrency:
+  group: dashboard
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dependencias (lectura de la hoja de Drive con cuenta de servicio)
+        run: pip install --quiet google-auth requests openpyxl
+
+      - name: Generar dashboard
+        env:
+          KOBO_TOKEN: ${{ secrets.KOBO_TOKEN }}
+          GDRIVE_SA_KEY: ${{ secrets.GDRIVE_SA_KEY }}   # llave JSON de la cuenta de servicio
+        run: python3 build_dashboard.py
+
+      - name: Commitear si cambió
+        run: |
+          git config user.name  "dashboard-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add index.html
+          if git diff --quiet --cached; then
+            echo "Sin cambios."
+          else
+            git commit -m "Actualizar dashboard ($(date -u +%FT%TZ))"
+            git push
+          fi
